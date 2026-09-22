@@ -34,7 +34,7 @@ Kalshi/Polymarket(예측시장)과 Binance/Coinbase(현물)의 BTC 데이터를 
 
 | 단계 | 범위 | EXIT CRITERION (실행 가능한 시연) |
 |---|---|---|
-| **MVP1 — shape** | 스키마 + 흐름 + 테이블, 전부 mock | `docker compose up` → `ch-migrate` → seed → `MOCK_SOURCE=1` writer → api → web. 브라우저 1화면에서 **kalshi와 polymarket mock 오더북이 둘 다 갱신**되고, writer를 죽이면 freshness가 stale로 변한다. 저장소 전체에 Kafka 연결 0개(`002_kafka_engines.sql` 미적용, `KAFKA_BOOTSTRAP` 미설정 상태로 전 흐름 성립) |
+| **MVP1 — shape** | 스키마 + 흐름 + 테이블, 전부 mock | `docker compose up` → `ch-migrate` → seed → `MOCK_SOURCE=1` writer → api → web. 브라우저 1화면에서 **kalshi와 polymarket mock 오더북이 둘 다 갱신**되고, writer를 죽이면 freshness가 stale로 변한다. 저장소 전체에 Kafka 연결 0개(`002_kafka_engines.sql` 미적용, `KAFKA_BOOTSTRAP` 미설정 상태로 전 흐름 성립). **이 1회 기동의 stdout 전 줄이 `jq .` 를 통과해야 한다 — U15가 닫히기 전에는 MVP1이 닫히지 않는다**(구조화 로깅이 MVP1의 목표 7번 산출물이므로 정리 과제가 아니다) |
 | **MVP2 — one real slice** | Binance BTC 실 파이프라인 1줄기 | 실 binance producer 1개 기동 후 `SELECT DISTINCT symbol FROM crypto_ticks FINAL WHERE venue='binance'` 이 정확히 `MOCK_BTCUSDT`, `BTCUSDT` 2행(ETH/SOL/XRP 0행 = `auto.offset.reset=latest` 관찰). `git diff` 기준 `packages/schema/src/proto/` 와 `001_data_tables.sql` 변경 0줄. mock 행과 실 행은 `MOCK_` 심볼 접두어로만 구분되며 공존 |
 | **MVP3 — core migrated** | Kalshi 오더북 경로 실전환 | writer가 `kafkaSource`로 돌아 Redis `ob:kalshi:*` 가 실 티커로 채워지고, `SELECT count() FROM pred_orderbook_ws FINAL` == `SELECT uniqExact(idempotency_key) ...`. 이전한 경로의 mock만 폐기, 나머지 mock은 fallback으로 유지 |
 
@@ -55,30 +55,48 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: 빈 workspace에서 `pnpm build` 종료코드 0. `package.json`에 `packageManager: "pnpm@…"` 필드 존재.
   - 수락: 루트에 `x_pyproject.toml` 존재하고 `pyproject.toml` 부재. `_scripts/` 의 `useClaude/`, `useGoogleVertex.claude/`, `useLocalOllama.gemma/` 세 디렉터리가 `x_` 접두어로 이름만 바뀌어 존재(삭제 금지 — soft-delete).
   - 수락: `.gitignore` 에 `weather|ml_server|k8s|Cargo|\.venv` 매칭 줄 0개. `git check-ignore mocks/` 출력 없음.
-- [ ] **U3 — `packages/schema` 이식 + trim + venue 차원 (§3.1, §7).** `kalshi.proto`→`pred.proto` 3종 `Pred*` + `venue = 101`, crypto `source`→`venue`(번호 2 유지), codec 토픽 키를 `pred.*`로. 선행: U1
+- [x] **U3 — `packages/schema` 이식 + trim + venue 차원 (§3.1, §7).** `kalshi.proto`→`pred.proto` 3종 `Pred*` + `venue = 101`, crypto `source`→`venue`(번호 2 유지), codec 토픽 키를 `pred.*`로. 선행: U1
   - 수락: `pnpm codegen` 종료코드 0. `grep -c venue` 기준 5개 메시지 전부 `venue` 필드 보유.
   - 수락: `proto-codec.ts` 의 `PROTO_ENCODERS` 맵에 `kalshi.` 로 시작하는 키 0개.
   - 수락: `weather.proto`, `src/table-configs/`, `src/generators/`, `src/generated/python/` 경로 부재.
   - 수락(고의 파손): `pred.proto` 에서 필드 번호 101을 한 메시지 안에 두 번 쓰고 `pnpm codegen` → 중복 번호로 실패하는 것을 관찰 후 원복(§3.2 "필드 번호 재사용 금지"가 실제로 감시되는지 확인).
-- [ ] **U2 — `infra/docker-compose.dev.yml` (clickhouse + redis) + colima 런북 (§10).** 선행: U1
+- [x] **U2 — `infra/docker-compose.dev.yml` (clickhouse + redis) + colima 런북 (§10).** 선행: U1
   - 수락: `colima start` 후 `docker compose -f infra/docker-compose.dev.yml up -d` → `docker compose ps` 가 2개 컨테이너 healthy.
   - 수락: `grep -ci kafka infra/docker-compose.dev.yml` 이 0 (주석도 없음).
   - 수락(고의 파손): `CLICKHOUSE_PASSWORD` 를 비우고 접속 → 인증 실패 관찰 후 원복.
-- [ ] **U4 — `packages/db` 이식 + `001_data_tables.sql` + `_scripts/ch-migrate.sh` 신규 (§3.4).** 선행: U2, U3
+- [x] **U4 — `packages/db` 이식 + `001_data_tables.sql` + `_scripts/ch-migrate.sh` 신규 (§3.4).** 선행: U2, U3
   - 수락: `bash _scripts/ch-migrate.sh` 후 `SHOW TABLES` 가 §3.4의 6개 테이블 정확히 그대로, `*_kafka` 0개.
   - 수락: 같은 스크립트를 두 번 실행해도 에러 없음(멱등).
   - 수락: `insert-csv.ts`, `utils/raw-query.ts` 부재.
   - 주의: `002_kafka_engines.sql` 은 **작성하지 않는다** (MVP2 과제 M2).
-- [ ] **U5 — `packages/{common,env,kalshi-core}` 이식 + trim + logger JSON화 (§7).** 선행: U3
+- [x] **U5 — `packages/{common,env,kalshi-core}` 이식 + trim + logger JSON화 (§7).** 선행: U3
   - 수락: `pnpm typecheck` 종료코드 0.
   - 수락: 로그 한 줄을 `jq .` 로 파이프 → 파싱 성공(ANSI 컬러 문자열 아님).
   - 수락: `idempotency.ts` 에 weather 키 함수 0개, Kalshi 전용 함수명(`kalshi*Key`) 0개 — 키는 `venue` 파라미터를 받는다.
   - 수락: `math/kelly*`, `env/src/llm.ts`, `series/climate.ts` 경로 부재.
+- [ ] **U3b — 와이어 포맷 protobuf → JSON (소유자, 2026-09-22).** Kafka 페이로드는 MVP1 내내 JSON이며 파이프라인이 검증될 때까지 유지한다 — 이유는 콘솔 컨슈머로 토픽을 읽을 수 있는 디버깅 가능성. **U3를 되돌리지 않는다**: `.proto` 는 메시지 형태의 SSOT로 그대로 남고, codec 경계의 인코딩만 `@bufbuild/protobuf` 의 `toJson`/`fromJson` 으로 바뀐다. 선행: U4, U5 / **U7보다 먼저**
+  - 수락: codec이 내보낸 JSON의 키가 **snake_case** 로 ClickHouse 컬럼명과 1:1 일치(protobuf-JSON 기본 lowerCamelCase 아님) — 한 메시지를 인코딩해 키 목록과 `DESCRIBE` 컬럼 목록이 같음을 확인.
+  - 수락: 마이그레이션에서 `Protobuf` + `format_schema` 가 0회 등장하고 `JSONEachRow` 로 대체. 그 결과 U2에서 컨테이너 재시작 루프를 일으켰던 `format_schemas` 마운트가 compose에서 **소멸**한다.
+  - 수락(실측 필수): int64가 **따옴표 친 JSON 문자열**로 직렬화되므로, 그 형태를 `JSONEachRow` 로 넣어 `Int64`/`DateTime64` 컬럼에 값이 정상 적재되는지, `seq: null` 이 `Nullable(Int64)` 에 `NULL` 로 들어가는지 실제 INSERT + SELECT로 확인(추측 금지).
+  - 수락(고의 파손): 키 하나를 lowerCamelCase로 바꿔 INSERT → 해당 컬럼이 기본값으로 떨어지거나 거부되는 것을 관찰 후 원복.
+  - **비목표(함정)**: `packages/common/src/kafka.ts` 의 기존 `publishJson()` 과 `routePublish` 의 `KAFKA_ENCODING=json` 분기를 **재사용하지 않는다**(§3.7 규칙 4). `publishJson()` 은 페이로드에 `_ts`/`_key` 를 주입해 스키마 밖 키 2개를 와이어에 올리고, proto 필드명 규칙도 적용하지 않는다. JSON 경로는 **새 인코딩 단계**다. 수락: 와이어 페이로드의 키 집합이 proto 필드 집합과 **정확히 일치**(`_ts`/`_key` 0건).
+  - 주의: `useProtoFieldName` 을 빠뜨려도 **ClickHouse는 에러를 내지 않는다** — 컬럼 기본값을 조용히 취해 데이터가 빈 채로 들어간다. 위 고의 파손 검증이 평소보다 중요한 이유.
+  - 귀결: mock `.jsonl` 은 이제 와이어 페이로드와 **바이트 단위로 동일**해진다(§3.6의 "필드 단위 동일"보다 강함) → U7 수락 기준의 근거가 된다.
+- [ ] **U5c — idempotency 키 형식 통일 (§4.4 정확 형식 표가 SSOT).** 예측시장·현물 키 모두 **venue를 축약 없이 그대로** 싣고 `sourceAbbr()` 을 제거한다. 근거: 축약이 지키려던 구 `crypto.*` 백로그와의 연속성은 **애초에 존재하지 않는다** — 그 바이트에는 `venue` 필드가 없어 어떤 키 형식이든 그대로는 소비 불가이고, 흡수하려면 키를 다시 쓰는 backfill이 반드시 필요하다. U5는 커밋(`6e38dce`) 완료·종결 상태이므로 되돌리지 않고 후속 과제로 처리한다. 선행: U5 / **U7보다 먼저**(U7의 mock 키가 최종 형식이어야 한다)
+  - 수락: `idempotency.ts` 에 `sourceAbbr` 문자열 0건. 5개 키 함수 출력이 §4.4 표와 문자 단위로 일치(각 함수 1회 호출 결과를 표와 대조).
+  - 수락: `cryptoTradeKey`/`cryptoTickerKey` 출력에 `binance`/`coinbase` 가 축약 없이 그대로 나타난다.
+  - 수락(고의 파손): 한 키 함수의 구분자나 성분 순서를 바꿔 seed를 넣어 보고 §4.4 표와 어긋나는 것을 관찰 후 원복.
+  - **건드리지 말 것**: `orderbookKey` 에는 family 접두어가 **없다** — 미결 Q2에 따라 두 family를 모두 서빙할 수 있어 아키텍트가 의도적으로 남긴 비대칭이다. 후속 과제가 "일관성"을 이유로 고치지 않는다.
 - [ ] **U7 — `mocks/` 데이터셋 + `seed-clickhouse.sql` (§3.6).** venue 4종 전부 포함. 선행: U3, U4
   - 수락: seed 적용 후 6개 테이블의 `venue` 합집합이 정확히 `kalshi, polymarket, binance, coinbase` 4값.
-  - 수락: 모든 mock 행의 ticker/symbol이 `MOCK_` 로, idempotency key가 `mock|` 로 시작.
+  - 수락: 모든 mock 행의 ticker/symbol이 `MOCK_` 로 시작하고, idempotency key는 **U5c의 최종 형식**을 따른다(키에 `MOCK_` 가 티커 성분으로 이미 들어가므로 별도 `mock|` 접두어는 쓰지 않는다 — 아키텍트 정정, §3.6). API 응답의 `feed = "mock"` 은 그대로.
   - 수락: 각 `.jsonl` 의 모든 줄이 U3 codec으로 디코딩 에러 없이 통과.
-- [ ] **U6 — producer 3종 이식 + BTC 한정 trim + `init-registry` REST 재설계 (§3.3, §7.1).** **기동하지 않는다.** 선행: U4, U5
+- [ ] **U5b — `packages/db` 를 workspace 패키지로 만든다.** U4는 `migrations/` 와 `ch-migrate.sh` 만 만들었고 `package.json` 도 `routePublish` 도 없다. §2/§7 상 producer 3종이 `@repo/db` 에서 `routePublish` 를 import 하므로 **이것 없이는 U6가 완료될 수 없다.** 선행: U5 / **U6보다 먼저**
+  - 수락: `pnpm ls --depth -1` 에 `@repo/db` 가 workspace 패키지로 나타나고, `pnpm build`/`typecheck` 가 이 패키지를 포함해 종료코드 0.
+  - 수락: `routePublish` 가 export되고 kafka 경로만 남았다 — csv 분기, `insert-csv.ts`, `utils/raw-query.ts` 0건 (§7).
+  - 수락(고의 파손): 임시 파일에서 `import { routePublish } from '@repo/db'` 를 하고 잘못된 인자로 호출 → 타입 에러 발생 관찰 후 파일 제거(해석이 아니라 실제 해석 경로가 살아 있음을 확인).
+- [ ] **U6 — producer 3종 이식 + BTC 한정 trim + `init-registry` REST 재설계 (§3.3, §7.1).** **기동하지 않는다.** 선행: U4, U5, U5b
+  - **선식별 수정건**: `packages/env/src/kalshi.ts` 의 `KALSHI_SERIES_CATEGORY: z.enum(['climate','crypto','all'])` 가 trim된 `TKalshiCategory`(`'crypto'|'hot'|'all'`)와 불일치 → `getSeriesByCategory(KALSHI_SERIES_CATEGORY)` 가 타입 에러. `climate` 를 제거해 맞춘다(§1의 weather 전면 제외가 §7의 "carry as-is"보다 우선 — 아키텍트 확정 대기 중이나 이 방향으로 진행). 수락: `climate` 문자열 0건 + `typecheck` 0.
   - 수락: 3개 앱 모두 `pnpm build` + `pnpm typecheck` 종료코드 0.
   - 수락: coinbase `config.ts` `PRODUCTS === ['BTC-USD']`, binance 심볼 상수 === `['btcusdt']`.
   - 수락: `init-registry.ts` 에 ClickHouse import 0개, `kalshi.market.api` 문자열 0개.
@@ -103,14 +121,18 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 구현 메모(블로커 아님): 참조 프로젝트는 Next.js라 `next/font` 경로를 쓸 수 없다 — 토큰 CSS는 거의 그대로 이식되지만 모노 폰트 로딩은 Vite 방식으로 따로 배선해야 한다.
   - 블로커 아님: **Q6**(Vite vs Next.js) — Vite가 기본값이며 소유자 지시가 있을 때만 변경.
 
-**MVP1 종료 판정**: 위 10개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
+- [ ] **U15 — 로깅 정리 (MVP1 마지막).** `packages/env/src/kalshi.ts`, `packages/common/src/kafka.ts` 에 캐리오버된 raw `console.log` 가 남아 있어 목표 7번(구조화 로깅)이 end-to-end로 성립하지 않는다. producer 3종(U6 이식분)도 함께 훑는다. 선행: U6, U10
+  - 수락: `apps/` + `packages/` 전역에서 `console.log|console.error` 검색 0건(logger 경유만).
+  - 수락: 전 흐름 1회 기동 중 stdout의 모든 줄이 `jq .` 를 통과한다(파싱 실패 줄 0개).
+
+**MVP1 종료 판정**: 위 15개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
 
 ---
 
 ## MVP2 tasks (MVP1 EXIT 이후에만 개시)
 
 - [ ] **M1 — producer 심볼 상수를 env로 (§3.3).** 수락: 코드에 하드코딩 심볼 배열 0개, `.env` 값 변경만으로 구독 심볼이 바뀌는 것을 기동 로그로 관찰.
-- [ ] **M2 — `002_kafka_engines.sql` 작성 + crypto 2개(`crypto_ticks_kafka`, `crypto_trades_kafka`)만 적용.** 수락: `SHOW TABLES` 에 `*_kafka` 2개 + MV 2개, 예측시장 kafka 테이블 0개. 컨슈머 설정에 `auto.offset.reset=latest` 명시.
+- [ ] **M2 — `002_kafka_engines.sql` 작성 + crypto 2개(`crypto_ticks_kafka`, `crypto_trades_kafka`)만 적용.** 수락: `SHOW TABLES` 에 `*_kafka` 2개 + MV 2개, 예측시장 kafka 테이블 0개. 컨슈머 설정에 `auto.offset.reset=latest` **필수**(권고 아님 — U5c의 키 결정이 이 값에 의존한다, §8 Q1-b). 수락: 설정값이 `latest` 임을 기동 로그/설정 파일에서 확인.
 - [ ] **M3 — `prod-crypto-binance-ts` 실기동 (Oracle Kafka).** 수락: Phase 표 MVP2 EXIT CRITERION의 `SELECT DISTINCT symbol … WHERE venue='binance'` 관찰. 고의 파손: producer를 죽였다 살려 중복 유입 → `FINAL` 조회에서 중복 0.
 - [ ] **M4 — `dr_cb: true` + 실패 건 error 로그 (§5.3-2).** 수락(고의 파손): `KAFKA_BOOTSTRAP` 을 잘못된 주소로 두고 기동 → 유실이 JSON error 로그로 남는 것을 관찰(현재는 무로그) 후 원복.
 - [ ] **U11 — `_scripts/kafka-lag.sh` 신규.** 선행: M3(소비 컨슈머 그룹이 실제로 존재해야 출력할 lag이 있다). 수락: 실행 시 컨슈머 그룹명과 lag 수치가 출력된다.
