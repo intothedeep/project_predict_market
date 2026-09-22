@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "typecheck": "turbo run lint",
     "codegen": "pnpm --filter @repo/schema codegen"
   },
   "devDependencies": {

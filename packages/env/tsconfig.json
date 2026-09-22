@@ -1,0 +1,9 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "rootDir": "src",
+        "outDir": "dist"
+    },
+    "include": ["src"],
+    "exclude": ["node_modules", "dist", "src/x_weather.ts", "src/x_llm.ts"]
+}

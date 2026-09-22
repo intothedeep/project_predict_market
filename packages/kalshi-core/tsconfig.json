@@ -1,0 +1,26 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "rootDir": "src",
+        "outDir": "dist"
+    },
+    "include": ["src"],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "src/x_stream.ts",
+        "src/series/x_climate.ts",
+        "src/types/x_series.types.ts",
+        "src/types/x_candlestick.types.ts",
+        "src/parsing/x_get-series.parsing.ts",
+        "src/parsing/x_get-candlestick.parsing.ts",
+        "src/parsing/x_get-trades.parsing.ts",
+        "src/api/x_get-series.api.ts",
+        "src/api/x_get-series-batch.api.ts",
+        "src/api/x_get-orderbook.api.ts",
+        "src/api/x_get-orderbook-batch.api.ts",
+        "src/api/x_get-candlestick.api.ts",
+        "src/api/x_get-candlestick-batch.api.ts",
+        "src/api/x_get-trades.api.ts"
+    ]
+}
