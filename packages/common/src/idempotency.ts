@@ -6,19 +6,6 @@ function key(parts: Array<unknown>): string {
     return parts.map(part).filter(Boolean).join('|');
 }
 
-const SOURCE_ABBR: Record<string, string> = {
-    binance: 'bi',
-    coinbase: 'co',
-    kraken: 'kr',
-    bybit: 'by',
-    live_ws: 'ws',
-    live_rest: 'rs',
-};
-
-export function sourceAbbr(source: string): string {
-    return SOURCE_ABBR[source] ?? source.slice(0, 2).toLowerCase();
-}
-
 // timeMs = producer receive time captured once per message; seq = per-process
 // monotonic counter disambiguating same-ms ticks. The key is embedded in the
 // payload, so redelivery of the SAME message keeps the same key (dedups)
@@ -55,15 +42,15 @@ export function cryptoTradeKey(
     symbol: string,
     nativeId: string | number
 ): string {
-    return key(['crypto', sourceAbbr(venue), 'trade', symbol, nativeId]);
+    return key(['crypto', venue, 'trade', symbol, nativeId]);
 }
 
 // Same timeMs+seq scheme as predTickKey — see comment there.
-export function cryptoTickerKey(
+export function cryptoTickKey(
     venue: string,
     symbol: string,
     timeMs: number,
     seq: number
 ): string {
-    return key(['crypto', sourceAbbr(venue), 'tick', symbol, timeMs, seq]);
+    return key(['crypto', venue, 'tick', symbol, timeMs, seq]);
 }
