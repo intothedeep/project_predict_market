@@ -1,0 +1,26 @@
+{
+    "name": "@repo/prod-crypto-binance-ts",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "produce": "tsx watch src/index.ts",
+        "preview": "DRY_RUN=true tsx watch src/index.ts",
+        "build": "tsc",
+        "lint": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@repo/common": "workspace:*",
+        "@repo/db": "workspace:*",
+        "@repo/env": "workspace:*",
+        "@repo/kalshi-core": "workspace:*",
+        "ws": "^8.18.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@types/ws": "^8.5.0",
+        "tsx": "^4.19.0",
+        "typescript": "^5.6.0"
+    }
+}

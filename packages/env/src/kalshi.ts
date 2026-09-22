@@ -16,7 +16,11 @@ export const kalshiSchema = z.object({
         .default('true')
         .transform((v) => v.toLowerCase() === 'true'),
 
-    KALSHI_SERIES_CATEGORY: z.enum(['climate', 'crypto', 'all']).default('all'),
+    // §1 excludes the weather domain entirely — the prior weather-category
+    // enum value is removed, 'hot' added to match trimmed TKalshiCategory
+    // ('crypto' | 'hot' | 'all'), default 'crypto' (00.architecture.mvp1.md
+    // §7 carry-over table, kalshi.ts row).
+    KALSHI_SERIES_CATEGORY: z.enum(['crypto', 'hot', 'all']).default('crypto'),
     KALSHI_WS_MARKET_CHUNK_SIZE: z.coerce.number().default(50),
     KALSHI_MARKETS_REFRESH_MS: z.coerce.number().default(300),
     KALSHI_MIN_VOLUME_FP: z.coerce.number().default(0),
@@ -25,12 +29,6 @@ export const kalshiSchema = z.object({
     KALSHI_MIN_MINUTES_TO_CLOSE: z.coerce.number().default(0),
     KALSHI_MAX_MINUTES_TO_CLOSE: z.coerce.number().default(0),
     KALSHI_MAX_MARKETS: z.coerce.number().default(0),
-    INITIAL_BANKROLL: z.coerce.number().default(1000),
-    MAX_BET_SIZE: z.coerce.number().default(50),
-    KELLY_FRACTION: z.coerce.number().default(0.25),
-    MIN_EDGE: z.coerce.number().default(0.05),
-    DAILY_LOSS_LIMIT_PCT: z.coerce.number().default(0.1),
-    MAX_CONCURRENT_POSITIONS: z.coerce.number().default(5),
 });
 
 export const KALSHI_ENV = kalshiSchema.parse(process.env);
@@ -73,10 +71,3 @@ export const KALSHI_MIN_MINUTES_TO_CLOSE =
 export const KALSHI_MAX_MINUTES_TO_CLOSE =
     KALSHI_ENV.KALSHI_MAX_MINUTES_TO_CLOSE;
 export const KALSHI_MAX_MARKETS = KALSHI_ENV.KALSHI_MAX_MARKETS;
-
-export const INITIAL_BANKROLL = KALSHI_ENV.INITIAL_BANKROLL;
-export const MAX_BET_SIZE = KALSHI_ENV.MAX_BET_SIZE;
-export const KELLY_FRACTION = KALSHI_ENV.KELLY_FRACTION;
-export const MIN_EDGE = KALSHI_ENV.MIN_EDGE;
-export const DAILY_LOSS_LIMIT_PCT = KALSHI_ENV.DAILY_LOSS_LIMIT_PCT;
-export const MAX_CONCURRENT_POSITIONS = KALSHI_ENV.MAX_CONCURRENT_POSITIONS;
