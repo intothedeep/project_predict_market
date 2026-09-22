@@ -1,0 +1,2 @@
+{"time_ms":"1758500000523","venue":"binance","symbol":"MOCK_BTCUSDT","price":"111111.11","qty":"0.005","trade_id":"MOCK_BI_TRADE_1","side":"buy","buyer_maker":false,"idempotency_key":"crypto|binance|trade|MOCK_BTCUSDT|MOCK_BI_TRADE_1"}
+{"time_ms":"1758500000523","venue":"coinbase","symbol":"MOCK_BTC-USD","price":"111111.11","qty":"0.005","trade_id":"MOCK_CB_TRADE_1","side":"buy","buyer_maker":false,"idempotency_key":"crypto|coinbase|trade|MOCK_BTC-USD|MOCK_CB_TRADE_1"}

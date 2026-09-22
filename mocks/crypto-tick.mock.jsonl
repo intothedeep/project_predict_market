@@ -1,0 +1,2 @@
+{"time_ms":"1758500000423","venue":"binance","symbol":"MOCK_BTCUSDT","last_price":"111111.11","best_bid":"111100.00","best_ask":"111120.00","volume_24h":"1234.5678","high_24h":"112000.00","low_24h":"110000.00","idempotency_key":"crypto|binance|tick|MOCK_BTCUSDT|1758500000423|1"}
+{"time_ms":"1758500000423","venue":"coinbase","symbol":"MOCK_BTC-USD","last_price":"111111.11","best_bid":"111100.00","best_ask":"111120.00","volume_24h":"1234.5678","high_24h":"112000.00","low_24h":"110000.00","idempotency_key":"crypto|coinbase|tick|MOCK_BTC-USD|1758500000423|1"}
