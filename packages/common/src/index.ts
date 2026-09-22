@@ -3,8 +3,10 @@ export {
     disconnectProducer,
     sendMessage,
     sendBinary,
+    sendJsonWire,
     publishJson,
     publishBinary,
+    publishJsonWire,
 } from './kafka';
 export { log, type LogLevel } from './logger';
 export { createRateLimitedLog } from './log-rate-limited';

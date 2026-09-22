@@ -312,6 +312,36 @@ class BufferedKafkaProducer {
             timestamp: Date.now(),
         });
     }
+
+    // Wire is JSON for MVP1 (00.architecture.mvp1.md §3.0/§3.7). `bytes` is
+    // already-encoded wire payload from @repo/schema's PROTO_ENCODERS
+    // (toJsonString with useProtoFieldName) — sent as-is, no _ts/_key
+    // injection (§3.7 rule 4 — do not route this through publishJson()).
+    async sendJsonWire(
+        topic: string,
+        key: string,
+        bytes: Uint8Array
+    ): Promise<void> {
+        if (DRY_RUN) {
+            console.log(
+                `[DRY_RUN: KAFKA JSON] Topic: ${topic}, ${bytes.length} bytes`
+            );
+            return;
+        }
+
+        if (!this.producer) {
+            throw new Error(
+                'Producer not initialized. Call initProducer() first.'
+            );
+        }
+
+        this.enqueue({
+            key,
+            value: Buffer.from(bytes),
+            headers: { encoding: 'json' },
+            timestamp: Date.now(),
+        });
+    }
 }
 
 const producers = new Map<Topic, BufferedKafkaProducer>();
@@ -361,6 +391,15 @@ export async function sendBinary(
     return producer.sendBinary(topic, key, bytes);
 }
 
+export async function sendJsonWire(
+    topic: string,
+    key: string,
+    bytes: Uint8Array
+): Promise<void> {
+    const producer = await getProducer(topic);
+    return producer.sendJsonWire(topic, key, bytes);
+}
+
 // Returns a promise that resolves once the message has been enqueued.
 // Errors are caught & logged here so the returned promise never rejects —
 // fire-and-forget callers can ignore it, one-shot scripts can `await` it
@@ -372,6 +411,22 @@ export function publishBinary(
 ): Promise<void> {
     return sendBinary(topic, key, bytes).catch((error) => {
         log('error', 'kafka', `publishBinary failed for ${topic}`, { error });
+    });
+}
+
+// The JSON-wire counterpart to publishBinary — sends pre-encoded bytes as-is.
+// Not publishJson(): that function injects _ts/_key into the payload, which
+// are not proto fields (§3.7 rule 4). Callers must encode via
+// @repo/schema's PROTO_ENCODERS first.
+export function publishJsonWire(
+    topic: string,
+    key: string,
+    bytes: Uint8Array
+): Promise<void> {
+    return sendJsonWire(topic, key, bytes).catch((error) => {
+        log('error', 'kafka', `publishJsonWire failed for ${topic}`, {
+            error,
+        });
     });
 }
 

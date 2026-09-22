@@ -3,7 +3,7 @@
 -- Six ReplacingMergeTree tables from 00.architecture.mvp1.md §3.4. These are the
 -- storage form of the schema contract: proto (packages/schema/src/proto/*.proto)
 -- → codec (proto-codec.ts) → this DDL. Columns mirror proto fields by NAME
--- (ClickHouse ProtobufSingle binds by name, not number — see §3.1), except `time`,
+-- (ClickHouse JSONEachRow binds by name, not number — see §3.1/§3.7), except `time`,
 -- which derives from proto's `time_ms` via `toDateTime64(time_ms / 1000, 3)` — that
 -- conversion is applied by the Kafka-fed materialized views in 002_kafka_engines.sql
 -- (MVP2); MVP1 seeds this column directly (mocks/seed-clickhouse.sql, task U7).

@@ -1,20 +1,43 @@
 /**
  * Proto Codec — Encoder and Decoder Maps
  * =======================================
- * Centralises Kafka proto binary encode/decode in @repo/schema so producers
- * (via @repo/db router) and consumers don't need a direct @bufbuild/protobuf
+ * Centralises Kafka wire encode/decode in @repo/schema so producers (via
+ * @repo/db router) and consumers don't need a direct @bufbuild/protobuf
  * dependency.
  *
- * PROTO_ENCODERS: topic → (data: Record<string,unknown>) → Uint8Array
- *   Called by routePublish when KAFKA_ENCODING=proto.
- *   `data` is the raw payload (no _ts/_key yet).
+ * Wire format is JSON, not proto binary (00.architecture.mvp1.md §3.0/§3.7,
+ * owner directive 2026-09-22 — kept until the data pipeline is proven, for
+ * console-consumer debuggability). `.proto` stays the shape SSOT; only the
+ * codec boundary's serialization changed: `toJsonString`/`fromJsonString`
+ * instead of `toBinary`/`fromBinary`. Reverting to binary is a one-line swap
+ * back, not a schema migration.
+ *
+ * `useProtoFieldName: true` is load-bearing (§3.7 rule 1): ClickHouse columns
+ * are snake_case, protobuf-JSON defaults to lowerCamelCase. Dropping this
+ * option does not error — columns silently take defaults.
+ *
+ * Every declared field is always on the wire, never omitted (owner directive,
+ * 2026-09-22 — a console-consumer reader must not have to consult the schema
+ * to tell "field absent" from "field zero"). `alwaysEmitImplicit` does NOT
+ * cover this for `optional` fields — verified empirically (see U3b report):
+ * an unset `optional string` stays fully omitted with alwaysEmitImplicit on,
+ * because that option only affects implicit-presence (non-optional) fields
+ * at their zero value, not explicit-presence fields with no value at all.
+ * So `toJsonBytes` normalizes the encoded object afterward: any of the
+ * schema's declared field names missing from the JSON output is filled with
+ * `null`. `fromJsonString` already treats an explicit `null` on a singular
+ * field as "unset" (verified: round-trips back to `undefined`, presence
+ * preserved) — so this is lossless.
+ *
+ * PROTO_ENCODERS: topic → (data: Record<string,unknown>) → Uint8Array (UTF-8 JSON bytes)
+ *   `data` is the raw payload (no _ts/_key — §3.7 rule 4, do not inject).
  *
  * PROTO_DECODERS: topic → (bytes: Uint8Array) → Record<string,unknown>
- *   Called by the consumer when the message header encoding=proto.
  *   Returns an object with _ts added (from timeMs) for writer compatibility.
  */
 
-import { create, toBinary, fromBinary } from '@bufbuild/protobuf';
+import { create, toJson, fromJsonString } from '@bufbuild/protobuf';
+import type { DescMessage, JsonObject } from '@bufbuild/protobuf';
 
 import {
     PredMarketTickSchema,
@@ -24,6 +47,37 @@ import {
 import { CryptoTradeSchema, CryptoTickSchema } from './generated/ts/crypto_pb';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+/**
+ * Serialize a proto message to JSON wire bytes (§3.7 rule 1 — snake_case
+ * field names) with every declared field present — unset `optional` fields
+ * are filled with explicit `null` rather than omitted (owner directive,
+ * 2026-09-22).
+ */
+function toJsonBytes<Desc extends DescMessage>(
+    schema: Desc,
+    msg: Parameters<typeof toJson<Desc>>[1]
+): Uint8Array {
+    const obj = toJson(schema, msg, {
+        useProtoFieldName: true,
+        alwaysEmitImplicit: true,
+    }) as JsonObject;
+    for (const field of schema.fields) {
+        if (!(field.name in obj)) obj[field.name] = null;
+    }
+    return textEncoder.encode(JSON.stringify(obj));
+}
+
+/** Parse JSON wire bytes back into a proto message. */
+function fromJsonBytes<Desc extends Parameters<typeof fromJsonString>[0]>(
+    schema: Desc,
+    bytes: Uint8Array
+): ReturnType<typeof fromJsonString<Desc>> {
+    return fromJsonString(schema, textDecoder.decode(bytes));
+}
 
 function toMs(ts: unknown): bigint {
     if (typeof ts === 'string') return BigInt(new Date(ts).getTime());
@@ -95,14 +149,14 @@ function decodedOrderbook(msg: unknown): Record<string, unknown> {
     };
 }
 
-// ─── Encoders (producer → Kafka binary) ───────────────────────────────────────
+// ─── Encoders (producer → Kafka JSON wire bytes) ─────────────────────────────
 
 export const PROTO_ENCODERS: Record<
     string,
     (data: Record<string, unknown>) => Uint8Array
 > = {
     'pred.market.tick.ws': (d) =>
-        toBinary(
+        toJsonBytes(
             PredMarketTickSchema,
             create(PredMarketTickSchema, {
                 timeMs: toMs(d._ts),
@@ -124,7 +178,7 @@ export const PROTO_ENCODERS: Record<
         ),
 
     'pred.trade.ws': (d) =>
-        toBinary(
+        toJsonBytes(
             PredTradeSchema,
             create(PredTradeSchema, {
                 timeMs: toMs(d._ts),
@@ -143,7 +197,7 @@ export const PROTO_ENCODERS: Record<
         ),
 
     'pred.orderbook.ws': (d) =>
-        toBinary(
+        toJsonBytes(
             PredOrderbookSchema,
             create(PredOrderbookSchema, {
                 timeMs: toMs(d._ts),
@@ -159,7 +213,7 @@ export const PROTO_ENCODERS: Record<
         ),
 
     'pred.orderbook_delta.ws': (d) =>
-        toBinary(
+        toJsonBytes(
             PredOrderbookSchema,
             create(PredOrderbookSchema, {
                 timeMs: toMs(d._ts),
@@ -176,7 +230,7 @@ export const PROTO_ENCODERS: Record<
         ),
 
     'crypto.trades': (d) =>
-        toBinary(
+        toJsonBytes(
             CryptoTradeSchema,
             create(CryptoTradeSchema, {
                 timeMs: toMs(d._ts),
@@ -194,7 +248,7 @@ export const PROTO_ENCODERS: Record<
         ),
 
     'crypto.ticks': (d) =>
-        toBinary(
+        toJsonBytes(
             CryptoTickSchema,
             create(CryptoTickSchema, {
                 timeMs: toMs(d._ts),
@@ -213,18 +267,18 @@ export const PROTO_ENCODERS: Record<
         ),
 };
 
-// ─── Decoders (Kafka binary → consumer Record) ────────────────────────────────
+// ─── Decoders (Kafka JSON wire bytes → consumer Record) ──────────────────────
 
 export const PROTO_DECODERS: Record<
     string,
     (bytes: Uint8Array) => Record<string, unknown>
 > = {
-    'pred.market.tick.ws': (b) => decoded(fromBinary(PredMarketTickSchema, b)),
-    'pred.trade.ws': (b) => decoded(fromBinary(PredTradeSchema, b)),
+    'pred.market.tick.ws': (b) => decoded(fromJsonBytes(PredMarketTickSchema, b)),
+    'pred.trade.ws': (b) => decoded(fromJsonBytes(PredTradeSchema, b)),
     'pred.orderbook.ws': (b) =>
-        decodedOrderbook(fromBinary(PredOrderbookSchema, b)),
+        decodedOrderbook(fromJsonBytes(PredOrderbookSchema, b)),
     'pred.orderbook_delta.ws': (b) =>
-        decodedOrderbook(fromBinary(PredOrderbookSchema, b)),
-    'crypto.trades': (b) => decoded(fromBinary(CryptoTradeSchema, b)),
-    'crypto.ticks': (b) => decoded(fromBinary(CryptoTickSchema, b)),
+        decodedOrderbook(fromJsonBytes(PredOrderbookSchema, b)),
+    'crypto.trades': (b) => decoded(fromJsonBytes(CryptoTradeSchema, b)),
+    'crypto.ticks': (b) => decoded(fromJsonBytes(CryptoTickSchema, b)),
 };
