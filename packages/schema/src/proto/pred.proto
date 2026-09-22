@@ -1,0 +1,66 @@
+// pred.proto — Kafka message schemas for prediction market data (Kalshi + Polymarket).
+// Messages: PredMarketTick, PredTrade, PredOrderbook
+// Ported from kalshi.proto (see 00.architecture.mvp1.md §3.1/§3.2) — trimmed to the
+// 3 messages MVP1 uses, each carrying a `venue` field so Kalshi and Polymarket can
+// share this contract. Field numbers are never reused across the trim — dropped
+// messages' numbers stay retired because past bytes with those numbers exist in the
+// old `kalshi.*` Kafka topics (read-only archive, not migrated here).
+// Regenerate: pnpm codegen
+// Output:     src/generated/ts/pred_pb.ts
+
+syntax = "proto3";
+
+package kalshi_schema;
+
+import "common.proto";
+
+option optimize_for = SPEED;
+
+// ── PredMarketTick ───────────────────────────────────────────────────────────
+// Kafka topic: pred.market.tick.ws
+// ClickHouse:  pred_market_tick_ws
+message PredMarketTick {
+  int64           time_ms       = 1;
+  string          ticker        = 2;
+  optional string yes_bid       = 3;
+  optional string yes_ask       = 4;
+  optional string no_bid        = 5;
+  optional string no_ask        = 6;
+  optional string last_price    = 7;
+  optional string volume        = 8;
+  optional string open_interest = 9;
+  optional string yes_bid_size  = 11;
+  optional string yes_ask_size  = 12;
+  string idempotency_key = 100;
+  string venue            = 101;  // kalshi | polymarket
+}
+
+// ── PredTrade ────────────────────────────────────────────────────────────────
+// Kafka topic: pred.trade.ws
+// Live table:  pred_trade_ws
+message PredTrade {
+  int64           time_ms      = 1;
+  string          ticker       = 2;
+  optional string trade_id     = 3;
+  optional string yes_price    = 4;
+  optional string no_price     = 5;
+  optional string count        = 6;
+  optional string taker_side   = 7;
+  optional string ingest_path  = 8;  // live_ws | live_rest
+  string idempotency_key = 100;
+  string venue             = 101;  // kalshi | polymarket
+}
+
+// ── PredOrderbook ────────────────────────────────────────────────────────────
+// Kafka topics: pred.orderbook.ws (full book) | pred.orderbook_delta.ws (delta)
+// ClickHouse:   pred_orderbook_ws | pred_orderbook_delta_ws
+message PredOrderbook {
+  int64           time_ms = 1;
+  string          ticker  = 2;
+  repeated PriceLevel bids = 3;
+  repeated PriceLevel asks = 4;
+  optional int64  seq     = 5;  // WS and delta topics only
+  optional string type    = 6;  // delta topics only: snapshot | delta
+  string idempotency_key = 100;
+  string venue             = 101;  // kalshi | polymarket
+}

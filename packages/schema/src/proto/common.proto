@@ -1,0 +1,16 @@
+// common.proto — Shared types imported by pred.proto, crypto.proto.
+// Regenerate: pnpm codegen
+// Output:     src/generated/ts/common_pb.ts
+
+syntax = "proto3";
+
+package kalshi_schema;
+
+option optimize_for = SPEED;
+
+// Shared price level for orderbook entries: [price, quantity]
+// price/qty stored as raw string to preserve source precision (consumer applies multiplier on extract).
+message PriceLevel {
+  string price = 1;
+  string qty   = 2;
+}

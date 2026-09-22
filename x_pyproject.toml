@@ -1,0 +1,20 @@
+[project]
+name = "project-market-predict"
+version = "0.1.0"
+description = "Market prediction research and modeling."
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Taek Lim", email = "tio.taek.lim@gmail.com" }]
+dependencies = [
+    "matplotlib>=3.11.2",
+    "pandas>=3.0.5",
+    "scipy>=1.18.1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+]
+
+[tool.ruff]
+line-length = 100

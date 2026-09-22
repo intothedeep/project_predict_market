@@ -1,0 +1,42 @@
+// crypto.proto — Kafka message schemas for crypto exchange data.
+// Messages: CryptoTrade, CryptoTick
+// Note: price/qty fields are string to preserve NUMERIC precision.
+// Regenerate: pnpm codegen
+// Output:     src/generated/ts/crypto_pb.ts
+
+syntax = "proto3";
+
+package kalshi_schema;
+
+option optimize_for = SPEED;
+
+// ── CryptoTrade ───────────────────────────────────────────────────────────────
+// Kafka topic: crypto.trades
+// Live table:  crypto_trades (venue = exchange name)
+message CryptoTrade {
+  int64           time_ms     = 1;
+  string          venue       = 2;  // exchange: binance, coinbase, etc.
+  string          symbol      = 3;
+  string          price       = 4;  // NUMERIC → string to preserve precision
+  string          qty         = 5;
+  optional string trade_id    = 6;
+  optional string side        = 7;
+  optional bool   buyer_maker = 8;
+  string idempotency_key = 100;
+}
+
+// ── CryptoTick ────────────────────────────────────────────────────────────────
+// Kafka topic: crypto.ticks
+// Live table:  crypto_ticks
+message CryptoTick {
+  int64           time_ms    = 1;
+  string          venue      = 2;
+  string          symbol     = 3;
+  optional string last_price = 4;
+  optional string best_bid   = 5;
+  optional string best_ask   = 6;
+  optional string volume_24h = 7;
+  optional string high_24h   = 8;
+  optional string low_24h    = 9;
+  string idempotency_key = 100;
+}

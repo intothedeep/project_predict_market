@@ -1,0 +1,13 @@
+{
+  "name": "project-market-predict",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "codegen": "pnpm --filter @repo/schema codegen"
+  },
+  "devDependencies": {
+    "turbo": "^2"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

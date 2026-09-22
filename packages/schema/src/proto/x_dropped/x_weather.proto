@@ -1,0 +1,150 @@
+// weather.proto — Kafka message schemas for weather data.
+// Messages: WeatherObservation (multi-source live observations), WeatherAlert (alerts/events), WeatherForecast (forecast), WeatherForecastHourly (snapshot history), WeatherForecastDaily (daily-max forecasts), WeatherHistRecord (NOAA CDO historical)
+// Regenerate: pnpm --filter @repo/schema proto:gen
+// Output:     src/generated/ts/weather_pb.ts
+
+syntax = "proto3";
+
+package kalshi_schema;
+
+option optimize_for = SPEED;
+
+// ── WeatherObservation ────────────────────────────────────────────────────────
+// Kafka topic: weather.observation
+// Live table:  weather_observation (1-day chunks)
+// source values: nws | open-meteo | openweathermap | tomorrow | visual-crossing
+message WeatherObservation {
+  int64           time_ms        = 1;
+  string          source         = 2;
+  string          location       = 3;
+  optional string lat            = 4;
+  optional string lon            = 5;
+  optional string temperature    = 6;
+  optional string humidity       = 7;
+  optional string wind_speed     = 8;
+  optional string wind_direction = 9;
+  optional string pressure       = 10;
+  optional string cloud_cover    = 11;
+  optional string precipitation  = 12;
+  optional string conditions     = 13;
+  optional string raw_station_id   = 14;
+  optional string raw_station_name = 15;
+  optional string raw_message      = 16;
+  optional string quality_flag     = 17;
+  optional string station_network  = 18;
+  optional string temperature_unit = 19;  // normalized 'F' | 'C' (producer-set; distinct from raw API unit)
+  string idempotency_key = 100;
+}
+
+// ── WeatherAlert ──────────────────────────────────────────────────────────────
+// Kafka topic: weather.alert
+// Alert table: weather_alert (1-day chunks)
+// source values: nws
+message WeatherAlert {
+  int64           time_ms        = 1;
+  string          source         = 2;
+  string          location       = 3;
+  optional string alert_type     = 4;
+  optional string alert_severity = 5;
+  optional string conditions     = 6;
+  optional string raw_event       = 7;
+  optional string raw_headline    = 8;
+  optional string raw_sender_name = 9;
+  string idempotency_key = 100;
+}
+
+// ── WeatherForecast ───────────────────────────────────────────────────────────
+// Kafka topic: weather.forecast
+// Forecast table: weather_forecast (1-day chunks)
+// source values: nws | open-meteo
+message WeatherForecast {
+  int64           time_ms                    = 1;
+  string          source                     = 2;
+  string          location                   = 3;
+  optional string lat                        = 4;
+  optional string lon                        = 5;
+  optional string temperature                = 6;
+  optional string humidity                   = 7;
+  optional string wind_speed                 = 8;
+  optional string wind_direction             = 9;
+  optional string pressure                   = 10;
+  optional string cloud_cover                = 11;
+  optional string precipitation              = 12;
+  optional string precipitation_probability  = 13;
+  optional string conditions                 = 14;
+  optional string raw_valid_time             = 15;
+  optional string raw_temperature_unit       = 16;
+  optional string temperature_unit           = 17;  // normalized 'F' | 'C'
+  string idempotency_key = 100;
+}
+
+// ── WeatherForecastHourly ─────────────────────────────────────────────────────
+// Kafka topic: weather.forecast.hourly
+// Forecast table: weather_forecast_hourly (1-day chunks)
+// source values: nws
+message WeatherForecastHourly {
+  int64           forecast_for_time_ms       = 1;
+  string          forecast_observed_at       = 2;
+  optional int64  forecast_generated_at_ms   = 3;
+  string          source                     = 4;
+  string          location                   = 5;
+  optional string lat                        = 6;
+  optional string lon                        = 7;
+  optional string temperature                = 8;
+  optional string humidity                   = 9;
+  optional string wind_speed                 = 10;
+  optional string wind_direction             = 11;
+  optional string precipitation_probability  = 12;
+  optional string conditions                 = 13;
+  optional string raw_valid_time             = 14;
+  string          slot                       = 15;
+  optional string raw_end_time               = 16;
+  optional string raw_wind_speed             = 17;
+  optional string raw_wind_direction         = 18;
+  optional string raw_temperature_unit       = 19;
+  optional string raw_forecast_generator     = 20;
+  optional string raw_valid_times            = 21;
+  optional string temperature_unit           = 22;  // normalized 'F' | 'C'
+  string idempotency_key = 100;
+}
+
+// ── WeatherForecastDaily ──────────────────────────────────────────────────────
+// Kafka topic: weather.forecast.daily
+// Forecast table: weather_forecast_daily (30-day chunks)
+// source values: open-meteo:ecmwf_ifs025 | open-meteo:gfs_seamless
+message WeatherForecastDaily {
+  string          forecast_for_date_str    = 1;
+  string          forecast_observed_at     = 2;
+  string          slot                     = 3;
+  optional int64  forecast_generated_at_ms = 4;
+  string          source                   = 5;
+  string          location                 = 6;
+  optional string lat                      = 7;
+  optional string lon                      = 8;
+  optional string temperature_max          = 9;
+  optional string temperature_min          = 10;
+  optional string conditions               = 11;
+  optional string raw_model                = 12;
+  optional string raw_valid_times          = 13;
+  optional string temperature_unit         = 14;  // normalized 'F' | 'C'
+  string          idempotency_key          = 100;
+}
+
+// ── WeatherHistRecord ─────────────────────────────────────────────────────────
+// Kafka topic: none (NOAA CDO backfill only)
+// Hist table:  weather_hist (30-day chunks)
+// source: noaa-cdo
+message WeatherHistRecord {
+  int64           time_ms       = 1;
+  string          source        = 2;
+  string          location      = 3;
+  optional string station       = 4;
+  optional string temp_max      = 5;
+  optional string temp_min      = 6;
+  optional string temp_avg      = 7;
+  optional string precipitation = 8;
+  optional string snowfall      = 9;
+  optional string avg_wind_speed = 10;
+  optional string temperature_unit = 11;  // normalized 'F' | 'C'
+  string idempotency_key = 100;
+}
