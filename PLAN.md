@@ -28,7 +28,7 @@ Kalshi/Polymarket(예측시장)과 Binance/Coinbase(현물)의 BTC 데이터를 
 - 대시보드 푸시는 **SSE** (브라우저 WebSocket 아님).
 - Q4-b(seq 버그)는 **진단만** — 수정은 별건(U13).
 - **Q2 종결**: 오더북 재구성은 **예측시장(Kalshi + Polymarket) 전용**. Binance/Coinbase는 틱·체결만, 호가창 없음.
-- 잔여 미결: Q4(U13 블로커), Q5(U14에 부속), Q6(U10에 부속, Vite가 기본값).
+- 잔여 미결: Q4(U13 블로커 — 합성 카운터도 producer 재시작 시 리셋되므로 세션 성분은 **MVP3 필수 선행**으로 격상, 새 질문을 열지 않고 Q4에 병합), Q5(U14에 부속), Q6(U10에 부속, Vite가 기본값).
 
 ## Phase structure (§6)
 
@@ -87,7 +87,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: `cryptoTradeKey`/`cryptoTickKey`(§4.4 SSOT 이름 — 구 `cryptoTickerKey` 에서 개명, `predTickKey` 와 짝) 출력에 `binance`/`coinbase` 가 축약 없이 그대로 나타난다.
   - 수락(고의 파손): 한 키 함수의 구분자나 성분 순서를 바꿔 seed를 넣어 보고 §4.4 표와 어긋나는 것을 관찰 후 원복.
   - **건드리지 말 것**: `orderbookKey` 에는 family 접두어가 **없다** — 미결 Q2에 따라 두 family를 모두 서빙할 수 있어 아키텍트가 의도적으로 남긴 비대칭이다. 후속 과제가 "일관성"을 이유로 고치지 않는다.
-- [ ] **U7 — `mocks/` 데이터셋 + `seed-clickhouse.sql` (§3.6).** venue 4종 전부 포함. 선행: U3, U4
+- [x] **U7 — `mocks/` 데이터셋 + `seed-clickhouse.sql` (§3.6).** venue 4종 전부 포함. 선행: U3, U4
   - 수락: seed 적용 후 6개 테이블의 `venue` 합집합이 정확히 `kalshi, polymarket, binance, coinbase` 4값.
   - 수락: 모든 mock 행의 ticker/symbol이 `MOCK_` 로 시작하고, idempotency key는 **U5c의 최종 형식**을 따른다(키에 `MOCK_` 가 티커 성분으로 이미 들어가므로 별도 `mock|` 접두어는 쓰지 않는다 — 아키텍트 정정, §3.6). API 응답의 `feed = "mock"` 은 그대로.
   - 수락: 각 `.jsonl` 의 모든 줄이 U3 codec으로 디코딩 에러 없이 통과.
@@ -102,9 +102,16 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: coinbase `config.ts` `PRODUCTS === ['BTC-USD']`, binance 심볼 상수 === `['btcusdt']`.
   - 수락: `init-registry.ts` 에 ClickHouse import 0개, `kalshi.market.api` 문자열 0개.
   - 수락: 미이식 확인 — private 채널 핸들러 5종, `parse-orderbook.ws.ts` 경로 부재.
-  - 수락(§4.0 어댑터 경계): `prod-kalshi-ws-ts` 안에 Kalshi `VenueOrderbookAdapter` 구현 파일이 존재하고, `orderbook-reconstructor.ts` 에 `msg.channel` / `orderbook_snapshot` / `orderbook_delta` 문자열이 0개(거래소 방언은 어댑터에만 존재). `BookEvent.seq` 타입이 `number | null`. Polymarket 어댑터는 0개(MVP3).
+  - 수락(§4.0 어댑터 경계): `prod-kalshi-ws-ts` 안에 Kalshi `VenueOrderbookAdapter` 구현 파일이 존재하고, `orderbook-reconstructor.ts` 에 `msg.channel` / `orderbook_snapshot` / `orderbook_delta` 문자열이 0개(거래소 방언은 어댑터에만 존재). `BookEvent.seq` 타입이 `number | null`. Polymarket 어댑터는 0개(MVP3). 재구성기는 venue가 seq를 주지 않을 때 `(venue, ticker)` 별 단조 카운터를 **합성**해 `PredOrderbook.seq` 를 항상 채운다.
   - 수락: 이 과제 동안 producer 프로세스를 단 한 번도 띄우지 않는다(Kafka 연결 0개 불변식).
-- [ ] **U8 — `apps/orderbook-writer` + `MessageSource` + `mockSource` + Redis Lua LWW 가드 (§4.2, §4.4, §4.5).** 선행: U5, U7
+- [ ] **U7b — 키 헬퍼 fail-fast (§4.4 재작성분이 SSOT).** 아키텍트가 "U15"로 명명했으나 본 문서의 U15(로깅 정리)와 충돌하므로 **U7b로 부여한다** — 본 문서 어디에서도 이 작업을 U15로 부르지 않는다. 선행: U5c, U7 / **U8보다 먼저**(라이터가 이 키를 소비한다)
+  - 결함: 헬퍼가 빈 성분을 필터링해 인자가 빠지면 실패 대신 키가 **짧아진다**. `orderbookKey('polymarket', ticker, null)` → `ob|polymarket|{ticker}` 가 되어 그 티커의 전 스냅샷이 한 키로 뭉치고, `idempotency_key` 가 정렬 키 마지막 성분이라 ReplacingMergeTree가 **세션 전체를 1행으로 접는다** — 중복 제거가 아니라 데이터 유실이다. 더 나쁜 사례: `predTradeKey`/`cryptoTradeKey` 의 `nativeId` 는 proto상 `optional string trade_id` 라, 거래소가 체결 id를 안 주면 **그 티커의 모든 체결**이 1행으로 접힌다 — MVP3의 Kalshi 경로에서 실제로 발생 가능. `prod-crypto-binance-ts` 는 호출부에서 이미 복합 fallback으로 방어하고 있었고(위험이 한 곳에서만 패치된 상태), 아키텍트가 그 fallback을 계약으로 승격했다.
+  - 수락: 헬퍼가 고정 arity로 전 성분을 요구하고 누락 시 **throw**(`rules/core.md` fail-fast). 5개 키 함수 출력이 재작성된 §4.4와 문자 단위 일치.
+  - 수락: 체결 키에 복합 fallback이 계약으로 구현되어 있다(`trade_id` 부재 시의 대체 성분).
+  - 수락(고의 파손 — 이 과제의 핵심): **함수마다 각각** 성분 하나를 빼고 호출해 throw 하는 것을 관찰한다(1회 대표 검증 불가, 5회).
+  - 수락: mock 재생성 후 6개 `.jsonl` 이 **바이트 단위로 불변**(mock이 계약의 참조 구현이므로).
+- [ ] **U8 — `apps/orderbook-writer` + `MessageSource` + `mockSource` + Redis Lua LWW 가드 (§4.2, §4.4, §4.5).** 선행: U5, U7, U7b
+  - 범위: 와이어의 `PredOrderbook.seq` 는 **항상 채워진다** — venue가 시퀀스를 주지 않으면 재구성기가 `(venue, ticker)` 별 단조 카운터를 합성한다(합성 책임은 U6/U8). `BookEvent.seq: number | null` 계약은 그대로(어댑터는 venue의 사실을 보고한다). `time_ms` 로 대체하지 않는다 — 그것은 venue 이벤트 시각이라 같은 타임스탬프의 두 스냅샷이 여전히 충돌한다.
   - 수락: `MOCK_SOURCE=1` 로 기동 후 `redis-cli KEYS 'ob:*'` 에 `ob:kalshi:MOCK_*` 와 `ob:polymarket:MOCK_POLY_*` 가 모두 존재, `SCARD ob:index` >= 2, `TTL writer:heartbeat` <= 60.
   - 수락(고의 파손): 더 작은 `time_ms` 스냅샷을 재생 → `HGET ob:kalshi:MOCK_… time_ms` 값 불변(LWW 가드 동작 관찰) 후 정리.
   - 수락(고의 파손): `MOCK_SOURCE` 없이 기동 → 0이 아닌 종료코드 + error 로그로 죽고 `KEYS 'ob:*'` 가 비어 있다(§4.5 — mock은 기본값이 아니다).
@@ -126,7 +133,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: `apps/` + `packages/` 전역에서 `console.log|console.error` 검색 0건(logger 경유만).
   - 수락: 전 흐름 1회 기동 중 stdout의 모든 줄이 `jq .` 를 통과한다(파싱 실패 줄 0개).
 
-**MVP1 종료 판정**: 위 15개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
+**MVP1 종료 판정**: 위 16개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
 
 ---
 
@@ -142,7 +149,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: 캡처 전후 reconstructor 경로의 `git diff` 가 비어 있다(수정 금지 확인). 캡처 중 Kafka publish 0건.
   - 성격: 읽기 전용 1회 구독 → 1건 로그 → 종료. `KALSHI_API_KEY_ID`/`KALSHI_PRIVATE_KEY_PATH` 필요.
 - [ ] **U13 — U12 결과에 따른 reconstructor 수정 (+ 필요시 세션 성분).** 선행: U12
-  - **블로커: Q4 — Kalshi `seq` 가 재접속(구독) 단위로 리셋되는가?** U12 캡처 결과가 나오기 전에는 착수 금지. 리셋된다면 idempotency key에 세션 성분을 추가해야 한다(§4.4 인용문).
+  - **블로커: Q4 — Kalshi `seq` 가 재접속(구독) 단위로 리셋되는가?** U12 캡처 결과가 나오기 전에는 착수 금지. 리셋된다면 idempotency key에 세션 성분을 추가해야 한다(§4.4 인용문). **갱신**: U8의 합성 카운터도 producer 재시작 시 리셋되므로 재시작 간 충돌은 어느 경로에서도 남는다 — 세션 성분은 선택이 아니라 **MVP3 필수 선행**이며 U12/U13이 그 게이트다.
   - 수락: U12가 캡처한 실제 메시지를 reconstructor에 그대로 먹여 파싱된 seq가 원본 필드 값과 일치.
   - 수락(고의 파손): 같은 메시지의 seq를 +2 해서 먹이면 갭 감지 로그가 발생한다(현재는 발생하지 않는다 — 수정 전/후를 둘 다 관찰).
 
