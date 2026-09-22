@@ -30,10 +30,12 @@
  * preserved) — so this is lossless.
  *
  * PROTO_ENCODERS: topic → (data: Record<string,unknown>) → Uint8Array (UTF-8 JSON bytes)
- *   `data` is the raw payload (no _ts/_key — §3.7 rule 4, do not inject).
+ *   `data` takes two encoder-input-only keys that never reach the wire as such:
+ *   `event_time_ms` (the venue's event time, §3.7 rule 5 — becomes `time_ms`
+ *   on the wire) and `_key` (becomes `idempotency_key`).
  *
  * PROTO_DECODERS: topic → (bytes: Uint8Array) → Record<string,unknown>
- *   Returns an object with _ts added (from timeMs) for writer compatibility.
+ *   Returns an object with event_time_ms added (from timeMs) for writer compatibility.
  */
 
 import { create, toJson, fromJsonString } from '@bufbuild/protobuf';
@@ -79,10 +81,43 @@ function fromJsonBytes<Desc extends Parameters<typeof fromJsonString>[0]>(
     return fromJsonString(schema, textDecoder.decode(bytes));
 }
 
+// event_time_ms must be the venue's event time (§3.7 rule 5). Silently
+// substituting publish time here re-opens that hole: a producer restart that
+// fails to supply event_time_ms would re-create the same event under a
+// different time_ms, which never folds under ReplacingMergeTree — permanent
+// duplicates with no error anywhere (§5.4). Fail fast instead, same
+// principle as the idempotency key helper's empty-component check
+// (packages/common/src/idempotency.ts).
 function toMs(ts: unknown): bigint {
-    if (typeof ts === 'string') return BigInt(new Date(ts).getTime());
-    if (typeof ts === 'number') return BigInt(ts);
-    return BigInt(Date.now());
+    if (ts === undefined || ts === null) {
+        throw new Error(
+            `event_time_ms is missing (raw value: ${JSON.stringify(ts)}) — the venue's event timestamp must be supplied by the caller; publish time is not a substitute`
+        );
+    }
+    if (typeof ts === 'bigint') {
+        if (ts <= 0n) {
+            throw new Error(
+                `event_time_ms is not a valid epoch millisecond (raw value: ${ts})`
+            );
+        }
+        return ts;
+    }
+    let ms: number;
+    if (typeof ts === 'string') {
+        ms = new Date(ts).getTime();
+    } else if (typeof ts === 'number') {
+        ms = ts;
+    } else {
+        throw new Error(
+            `event_time_ms has unsupported type ${typeof ts} (raw value: ${JSON.stringify(ts)})`
+        );
+    }
+    if (!Number.isFinite(ms) || ms <= 0) {
+        throw new Error(
+            `event_time_ms did not resolve to a valid epoch millisecond (raw value: ${JSON.stringify(ts)}, resolved: ${ms})`
+        );
+    }
+    return BigInt(Math.trunc(ms));
 }
 
 function str(v: unknown): string {
@@ -119,7 +154,7 @@ function priceLevels(levels: unknown): Array<{ price: string; qty: string }> {
     });
 }
 
-/** Wrap decoded proto object as Record, adding _ts from timeMs. */
+/** Wrap decoded proto object as Record, adding event_time_ms from timeMs. */
 function decoded(msg: unknown): Record<string, unknown> {
     const r = msg as Record<string, unknown>;
     const rawMs = r['timeMs'] as bigint | undefined;
@@ -127,7 +162,7 @@ function decoded(msg: unknown): Record<string, unknown> {
         rawMs !== undefined
             ? new Date(Number(rawMs)).toISOString()
             : new Date().toISOString();
-    return { ...r, _ts: ts };
+    return { ...r, event_time_ms: ts };
 }
 
 function decodedOrderbook(msg: unknown): Record<string, unknown> {
@@ -159,7 +194,7 @@ export const PROTO_ENCODERS: Record<
         toJsonBytes(
             PredMarketTickSchema,
             create(PredMarketTickSchema, {
-                timeMs: toMs(d._ts),
+                timeMs: toMs(d.event_time_ms),
                 ticker: str(d.ticker),
                 yesBid: optStr(d.yesBid),
                 yesAsk: optStr(d.yesAsk),
@@ -181,7 +216,7 @@ export const PROTO_ENCODERS: Record<
         toJsonBytes(
             PredTradeSchema,
             create(PredTradeSchema, {
-                timeMs: toMs(d._ts),
+                timeMs: toMs(d.event_time_ms),
                 ticker: str(d.ticker),
                 tradeId: optStr(d.tradeId),
                 yesPrice: optStr(d.yesPrice),
@@ -200,7 +235,7 @@ export const PROTO_ENCODERS: Record<
         toJsonBytes(
             PredOrderbookSchema,
             create(PredOrderbookSchema, {
-                timeMs: toMs(d._ts),
+                timeMs: toMs(d.event_time_ms),
                 ticker: str(d.ticker),
                 bids: priceLevels(d.bids),
                 asks: priceLevels(d.asks),
@@ -216,7 +251,7 @@ export const PROTO_ENCODERS: Record<
         toJsonBytes(
             PredOrderbookSchema,
             create(PredOrderbookSchema, {
-                timeMs: toMs(d._ts),
+                timeMs: toMs(d.event_time_ms),
                 ticker: str(d.ticker),
                 bids: priceLevels(d.bids),
                 asks: priceLevels(d.asks),
@@ -233,7 +268,7 @@ export const PROTO_ENCODERS: Record<
         toJsonBytes(
             CryptoTradeSchema,
             create(CryptoTradeSchema, {
-                timeMs: toMs(d._ts),
+                timeMs: toMs(d.event_time_ms),
                 venue: str(d.venue),
                 symbol: str(d.symbol),
                 price: str(d.price),
@@ -251,7 +286,7 @@ export const PROTO_ENCODERS: Record<
         toJsonBytes(
             CryptoTickSchema,
             create(CryptoTickSchema, {
-                timeMs: toMs(d._ts),
+                timeMs: toMs(d.event_time_ms),
                 venue: str(d.venue),
                 symbol: str(d.symbol),
                 lastPrice: optStr(d.lastPrice),

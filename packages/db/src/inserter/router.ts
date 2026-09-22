@@ -48,8 +48,8 @@ export function routePublish(
         // `_key` is encoder input only — PROTO_ENCODERS maps it onto the
         // proto `idempotencyKey` field (see proto-codec.ts); it never reaches
         // the wire as a top-level `_key` since toJson only emits declared
-        // schema fields. `_ts` is deliberately NOT injected here: the
-        // encoder already falls back to Date.now() when absent, and
+        // schema fields. `event_time_ms` is deliberately NOT injected here:
+        // the encoder already falls back to Date.now() when absent, and
         // producers that carry an event timestamp put it on `data` directly.
         bytes = encoder({ ...data, _key: key });
     } catch (e) {

@@ -48,7 +48,7 @@ for (const [venue, ticker] of [
         topic: 'pred.market.tick.ws',
         table: 'pred_market_tick_ws',
         data: {
-            _ts: timeMs,
+            event_time_ms: timeMs,
             ticker,
             venue,
             yesBid: '11',
@@ -75,7 +75,7 @@ for (const [venue, ticker, tradeId] of [
         topic: 'pred.trade.ws',
         table: 'pred_trade_ws',
         data: {
-            _ts: timeMs,
+            event_time_ms: timeMs,
             ticker,
             venue,
             tradeId,
@@ -108,7 +108,7 @@ for (let i = 0; i < 3; i++) {
             topic: 'pred.orderbook.ws',
             table: 'pred_orderbook_ws',
             data: {
-                _ts: timeMs,
+                event_time_ms: timeMs,
                 ticker,
                 venue,
                 bids: [{ price: bid, qty: '1200' }],
@@ -131,7 +131,7 @@ for (const [venue, ticker] of [
         topic: 'pred.orderbook_delta.ws',
         table: 'pred_orderbook_delta_ws',
         data: {
-            _ts: timeMs,
+            event_time_ms: timeMs,
             ticker,
             venue,
             bids: [{ price: '14', qty: '500' }],
@@ -153,7 +153,7 @@ for (const [venue, symbol] of [
         topic: 'crypto.ticks',
         table: 'crypto_ticks',
         data: {
-            _ts: timeMs,
+            event_time_ms: timeMs,
             venue,
             symbol,
             lastPrice: '111111.11',
@@ -177,7 +177,7 @@ for (const [venue, symbol, tradeId] of [
         topic: 'crypto.trades',
         table: 'crypto_trades',
         data: {
-            _ts: timeMs,
+            event_time_ms: timeMs,
             venue,
             symbol,
             price: '111111.11',
