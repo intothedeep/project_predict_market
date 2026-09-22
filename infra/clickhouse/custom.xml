@@ -1,0 +1,82 @@
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <!-- format_schema_path intentionally omitted in MVP1: no format_schemas
+         mount yet (see docker-compose.dev.yml comment) and ClickHouse warns
+         on startup if this points at a path that doesn't exist. Add back in
+         M2 alongside the mount. -->
+    <logger>
+        <level>warning</level>
+        <console>1</console>
+    </logger>
+
+    <!--
+      Memory limits — paired with docker-compose `mem_limit: 2g` (dev, colima
+      6 GiB VM shared with redis + host overhead). Server self-cap set below
+      the cgroup limit so ClickHouse refuses a query gracefully
+      ("MEMORY_LIMIT_EXCEEDED") instead of the kernel OOM-killing the container.
+
+      1.5 GB = 1610612736 bytes (~75% of 2 GB container limit).
+    -->
+    <max_server_memory_usage>1610612736</max_server_memory_usage>
+
+    <profiles>
+        <default>
+            <!-- Per-query cap. Default 10 GB is unsafe on a 2 GB container. -->
+            <max_memory_usage>805306368</max_memory_usage>
+
+            <!--
+              Disk spill thresholds. When a single GROUP BY / ORDER BY would
+              exceed this, ClickHouse switches to disk-backed external
+              aggregation/sort instead of failing.
+            -->
+            <max_bytes_before_external_group_by>402653184</max_bytes_before_external_group_by>
+            <max_bytes_before_external_sort>402653184</max_bytes_before_external_sort>
+        </default>
+    </profiles>
+
+    <!--
+      System log TTLs — without these, ClickHouse system logs grow
+      unboundedly (observed 30+ GB in prior repo). Short TTLs are safe for a
+      throwaway dev volume; MVP1 has no production log-retention need.
+    -->
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, event_time</order_by>
+        <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, event_time</order_by>
+        <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </text_log>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, event_time</order_by>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </metric_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, event_time</order_by>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </part_log>
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, event_time</order_by>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+    </asynchronous_metric_log>
+</clickhouse>

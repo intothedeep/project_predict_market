@@ -1,0 +1,73 @@
+# infra/docker-compose.dev.yml — LOCAL DEV ONLY (colima)
+#
+# clickhouse + redis only. See 00.architecture.mvp1.md §10 for the local
+# runbook and the streaming broker's remote location (out of scope here).
+#
+# Quickstart:
+#   colima start --cpu 4 --memory 6
+#   docker context ls                 # confirm "colima" is the active (*) context
+#   cp infra/env.example .env         # fill in CLICKHOUSE_PASSWORD at minimum
+#   make up                           # == docker compose -f infra/docker-compose.dev.yml up -d
+#   docker compose -f infra/docker-compose.dev.yml ps   # both services healthy
+#
+# Env vars (root .env, no defaults for secrets):
+#   CLICKHOUSE_PASSWORD (required)  CLICKHOUSE_USER=admin  CLICKHOUSE_DB=market_predict
+#   CLICKHOUSE_PORT=8123  CLICKHOUSE_NATIVE_PORT=9000  REDIS_PORT=6379
+
+services:
+
+  # ── ClickHouse ────────────────────────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-dev
+    mem_limit: 2g
+    ports:
+      - "${CLICKHOUSE_PORT:-8123}:8123"          # HTTP — queries, migrations
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"   # Native TCP — clickhouse-client
+    volumes:
+      - clickhouse_dev_data:/var/lib/clickhouse
+      - ./clickhouse/custom.xml:/etc/clickhouse-server/config.d/custom.xml:ro
+      # format_schemas (proto) is not mounted in MVP1 — nothing reads
+      # protobuf yet (seed data is plain SQL INSERT). The official image's
+      # entrypoint chowns everything under /etc/clickhouse-server/ on start;
+      # a read-only bind mount there loops the container in a chown-fail
+      # restart (observed, see infra/README.md). Re-add once something
+      # actually consumes the proto schema — a plain `:ro` mount fails as
+      # above, so the fix (writable mount vs. entrypoint override) needs
+      # verifying against the image in use at that time, not assumed here.
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-admin}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in root .env}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-market_predict}
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis-dev
+    mem_limit: 384m
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_dev_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  clickhouse_dev_data:
+  redis_dev_data:
