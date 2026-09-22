@@ -1,0 +1,13 @@
+\chapter{예측시장 데이터 파이프라인이 푸는 문제}
+\label{ch:problem}
+
+이 장은 Kalshi와 Polymarket 같은 예측시장(prediction market), 그리고 Binance·Coinbase
+같은 현물 거래소(spot exchange)에서 BTC 관련 데이터를 실시간으로 모으는 일이 왜
+단순한 "API 호출 반복"이 아니라 별도의 설계를 요구하는 문제인지를 다룬다.
+피드가 끊기고, 메시지가 중복되고, 순서가 뒤집히는 조건에서도 하나의 오더북(orderbook)
+상태를 일관되게 유지해야 한다는 요구가 이후 모든 장(\Cref{ch:architecture}부터
+\Cref{ch:delivery}까지)의 설계 결정을 낳는다.
+
+\todo{§1--§2의 목표 나열과 §3.3 BTC 한정 근거를 바탕으로, "왜 이 파이프라인이 필요한가"를
+독자가 처음 만나는 문제로 풀어 쓴다. book.md 원칙 8(문제 → 처방)을 따라 이 장 전체가
+2장 이후의 각 결정을 예고하는 방식으로 작성.}

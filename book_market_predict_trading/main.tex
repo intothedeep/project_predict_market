@@ -1,0 +1,115 @@
+% !TEX program = xelatex
+% 예측시장 데이터 파이프라인 학습서 — 빌드: latexmk -xelatex main.tex
+\documentclass[11pt]{book}
+
+% ---------------------------------------------------------------------------
+% 폰트 · 한글 (rules/writing/latex.md §2, §4)
+% ---------------------------------------------------------------------------
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setCJKmainfont{Apple SD Gothic Neo}
+\xeCJKsetup{CJKspace=true}
+
+% ---------------------------------------------------------------------------
+% 수식 (latex.md §5)
+% ---------------------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{unicode-math}
+
+% ---------------------------------------------------------------------------
+% 그림 · 표 · 코드
+% ---------------------------------------------------------------------------
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, backgrounds}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{listings}
+\usepackage{etoolbox}
+
+% 코드 블록이 쪽 중간에서 잘리지 않게 minipage로 감싼다 (latex.md §9)
+\BeforeBeginEnvironment{lstlisting}{\par\medskip\noindent\begin{minipage}{\linewidth}}
+\AfterEndEnvironment{lstlisting}{\end{minipage}\par\medskip}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  rulecolor=\color{black!30},
+  backgroundcolor=\color{black!3},
+}
+
+% ---------------------------------------------------------------------------
+% 색 · 콜아웃 박스 (tcolorbox 없음, latex.md §6)
+% ---------------------------------------------------------------------------
+\usepackage{xcolor}
+\newsavebox{\calloutbox}
+\newenvironment{callout}[1][]
+  {\par\medskip\noindent
+   \begin{lrbox}{\calloutbox}\begin{minipage}{0.92\linewidth}
+   \def\calloutttl{#1}\ifx\calloutttl\empty\else\textbf{#1}\par\smallskip\fi}
+  {\end{minipage}\end{lrbox}%
+   \fcolorbox{black!30}{black!3}{\usebox{\calloutbox}}\par\medskip}
+
+% ---------------------------------------------------------------------------
+% 예제 환경 (amsthm 없이 kernel \newtheorem으로 충분)
+% ---------------------------------------------------------------------------
+\newtheorem{example}{예제}[chapter]
+
+% ---------------------------------------------------------------------------
+% \todo — todonotes 미설치(kpsewhich 확인됨). 순수 매크로로 대체.
+% ---------------------------------------------------------------------------
+\newcommand{\todo}[1]{\par\medskip\noindent\textcolor{red!70!black}{\textbf{[TODO]} #1}\par\medskip}
+
+% ---------------------------------------------------------------------------
+% Semantic 매크로 (book.md §4)
+% ---------------------------------------------------------------------------
+\newcommand{\term}[1]{\textit{#1}}
+\newcommand{\analogy}[1]{\textit{#1}}
+\newcommand{\contains}{\ensuremath{\supset}}
+
+% ---------------------------------------------------------------------------
+% 교차 참조 (latex.md §10) — hyperref 다음, cleveref 마지막
+% ---------------------------------------------------------------------------
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+\crefname{chapter}{장}{장}
+\Crefname{chapter}{장}{장}
+\crefname{section}{절}{절}
+\Crefname{section}{절}{절}
+\crefname{subsection}{절}{절}
+\Crefname{subsection}{절}{절}
+\crefname{figure}{그림}{그림}
+\Crefname{figure}{그림}{그림}
+\crefname{table}{표}{표}
+\Crefname{table}{표}{표}
+\crefname{equation}{식}{식}
+\Crefname{equation}{식}{식}
+\crefname{example}{예제}{예제}
+\Crefname{example}{예제}{예제}
+
+\title{예측시장 데이터 파이프라인 학습서}
+\author{}
+\date{}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+
+\mainmatter
+\input{chapters/01-problem.tex}
+\input{chapters/02-architecture.tex}
+\input{chapters/03-contract.tex}
+\input{chapters/04-orderbook.tex}
+\input{chapters/05-delivery.tex}
+\input{chapters/06-prediction.tex}
+
+\backmatter
+\nocite{arch-mvp1}
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

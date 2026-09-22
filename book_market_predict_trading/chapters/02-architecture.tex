@@ -1,0 +1,11 @@
+\chapter{왜 Kafka인가, 왜 Redis와 ClickHouse 둘 다인가}
+\label{ch:architecture}
+
+이 장은 세 개의 producer가 원격 Kafka로 모이고, 거기서 다시 Redis(현재 상태)와
+ClickHouse(이력)로 갈라지는 토폴로지가 왜 그 모양인지를 다룬다. 핵심 질문은 하나다 —
+"현재 상태"와 "전체 이력"은 왜 같은 저장소에 담을 수 없는가. 이 질문의 답이
+\Cref{ch:orderbook}의 오더북 재구성 설계와 \Cref{ch:delivery}의 전달 보장 설계를 함께
+떠받친다.
+
+\todo{§2 비즈니스 흐름, §4.3(Redis vs ClickHouse 표), §10 로컬 실행 전제를 바탕으로
+Kafka를 중앙 버스로 둔 이유와 Redis/ClickHouse 역할 분리를 설명한다.}
