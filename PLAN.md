@@ -79,7 +79,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: 마이그레이션에서 `Protobuf` + `format_schema` 가 0회 등장하고 `JSONEachRow` 로 대체. 그 결과 U2에서 컨테이너 재시작 루프를 일으켰던 `format_schemas` 마운트가 compose에서 **소멸**한다.
   - 수락(실측 필수): int64가 **따옴표 친 JSON 문자열**로 직렬화되므로, 그 형태를 `JSONEachRow` 로 넣어 `Int64`/`DateTime64` 컬럼에 값이 정상 적재되는지, `seq: null` 이 `Nullable(Int64)` 에 `NULL` 로 들어가는지 실제 INSERT + SELECT로 확인(추측 금지).
   - 수락(고의 파손): 키 하나를 lowerCamelCase로 바꿔 INSERT → 해당 컬럼이 기본값으로 떨어지거나 거부되는 것을 관찰 후 원복.
-  - **비목표(함정)**: `packages/common/src/kafka.ts` 의 기존 `publishJson()` 과 `routePublish` 의 `KAFKA_ENCODING=json` 분기를 **재사용하지 않는다**(§3.7 규칙 4). `publishJson()` 은 페이로드에 `_ts`/`_key` 를 주입해 스키마 밖 키 2개를 와이어에 올리고, proto 필드명 규칙도 적용하지 않는다. JSON 경로는 **새 인코딩 단계**다. 수락: 와이어 페이로드의 키 집합이 proto 필드 집합과 **정확히 일치**(`_ts`/`_key` 0건).
+  - **비목표(함정)**: `packages/common/src/kafka.ts` 의 기존 `publishJson()` 과 `routePublish` 의 `KAFKA_ENCODING=json` 분기를 **재사용하지 않는다**(§3.7 규칙 4). `publishJson()` 은 페이로드에 `_ts`/`_key` 를 주입해 스키마 밖 키 2개를 와이어에 올리고, proto 필드명 규칙도 적용하지 않는다. JSON 경로는 **새 인코딩 단계**다. (여기의 `_ts` 는 레거시 `publishJson()` 이 실제로 주입하는 **발행** 시각이며 이름 그대로 둔다 — producer가 싣는 이벤트 시각 `event_time_ms` 와 다른 값이다.) 수락: 와이어 페이로드의 키 집합이 proto 필드 집합과 **정확히 일치**(`_ts`/`_key` 0건).
   - 주의: `useProtoFieldName` 을 빠뜨려도 **ClickHouse는 에러를 내지 않는다** — 컬럼 기본값을 조용히 취해 데이터가 빈 채로 들어간다. 위 고의 파손 검증이 평소보다 중요한 이유.
   - 귀결: mock `.jsonl` 은 이제 와이어 페이로드와 **바이트 단위로 동일**해진다(§3.6의 "필드 단위 동일"보다 강함) → U7 수락 기준의 근거가 된다.
 - [x] **U5c — idempotency 키 형식 통일 (§4.4 정확 형식 표가 SSOT).** 예측시장·현물 키 모두 **venue를 축약 없이 그대로** 싣고 `sourceAbbr()` 을 제거한다. 근거: 축약이 지키려던 구 `crypto.*` 백로그와의 연속성은 **애초에 존재하지 않는다** — 그 바이트에는 `venue` 필드가 없어 어떤 키 형식이든 그대로는 소비 불가이고, 흡수하려면 키를 다시 쓰는 backfill이 반드시 필요하다. U5는 커밋(`6e38dce`) 완료·종결 상태이므로 되돌리지 않고 후속 과제로 처리한다. 선행: U5 / **U7보다 먼저**(U7의 mock 키가 최종 형식이어야 한다)
@@ -95,16 +95,18 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: `pnpm ls --depth -1` 에 `@repo/db` 가 workspace 패키지로 나타나고, `pnpm build`/`typecheck` 가 이 패키지를 포함해 종료코드 0.
   - 수락: `routePublish` 가 export되고 kafka 경로만 남았다 — csv 분기, `insert-csv.ts`, `utils/raw-query.ts` 0건 (§7).
   - 수락(고의 파손): 임시 파일에서 `import { routePublish } from '@repo/db'` 를 하고 잘못된 인자로 호출 → 타입 에러 발생 관찰 후 파일 제거(해석이 아니라 실제 해석 경로가 살아 있음을 확인).
-- [ ] **U6 — producer 3종 이식 + BTC 한정 trim + `init-registry` REST 재설계 (§3.3, §7.1).** **기동하지 않는다.** 선행: U4, U5, U5b
+- [x] **U6 — producer 3종 이식 + BTC 한정 trim + `init-registry` REST 재설계 (§3.3, §7.1).** **기동하지 않는다.** 선행: U4, U5, U5b
   - **선식별 수정건**: `packages/env/src/kalshi.ts` 의 `KALSHI_SERIES_CATEGORY: z.enum(['climate','crypto','all'])` 가 trim된 `TKalshiCategory`(`'crypto'|'hot'|'all'`)와 불일치 → `getSeriesByCategory(KALSHI_SERIES_CATEGORY)` 가 타입 에러. `climate` 를 제거해 맞춘다(§1의 weather 전면 제외가 §7의 "carry as-is"보다 우선 — 아키텍트 확정 대기 중이나 이 방향으로 진행). 수락: `climate` 문자열 0건 + `typecheck` 0.
-  - **선식별 결정 대기건**: producer가 `data._ts` 에 거래소 자체 타임스탬프를 실을 것인가. U5b 이후 라우터가 `_ts` 를 주입하지 않으므로 이 훅이 비어 있다(발행 시각 대신 이벤트 시각을 쓸 수 있는 자리). **아키텍트 확정 대기** — 스스로 결정하지 말 것.
+  - **확정(§3.7 규칙 5)**: producer는 **거래소 이벤트 시각**을 `event_time_ms` 로 공급해야 한다(구 이름 `_ts` 에서 개명 — 이 값은 `time_ms` 로 와이어에 실제로 나가므로 밑줄 접두어가 틀렸고, 이름이 "어느 시각인지"를 말하지 않았다). 발행 시각 대입 금지.
+  - **미해결 예외(아키텍트 판정 대기 — 스스로 해결하지 말 것)**: Kalshi tick/orderbook 경로가 현재 `event_time_ms` 에 `Date.now()` 를 넣고 있고(코드에서 이벤트 시각 필드를 찾지 못함), Kalshi trade 경로는 `created_time` 을 쓰는데 이는 REST 필드명이라 WS 경로에서 미검증이다. Binance/Coinbase는 실 이벤트 시각을 싣는다. **MVP3가 이전할 바로 그 경로의 규칙 5 위반**이며 §5.4상 귀결은 재시작 시 에러 없는 영구 중복이다. U12 게이트로 묶은 예외로 기록할지, 더 나은 수단이 있는지 판정 대기.
+  - **판정 대기 2건**: (a) registry 교체가 §7.1이 적은 범위를 넘어 동작을 바꿨다 — TTL 축출 상실 + status 화이트리스트가 더 좁아짐. (b) 인증 헤더가 **공개** WS 풀에 추가되었다(구 코드에는 없었음).
   - 수락: 3개 앱 모두 `pnpm build` + `pnpm typecheck` 종료코드 0.
   - 수락: coinbase `config.ts` `PRODUCTS === ['BTC-USD']`, binance 심볼 상수 === `['btcusdt']`.
   - 수락: `init-registry.ts` 에 ClickHouse import 0개, `kalshi.market.api` 문자열 0개.
   - 수락: 미이식 확인 — private 채널 핸들러 5종, `parse-orderbook.ws.ts` 경로 부재.
   - 수락(§4.0 어댑터 경계): `prod-kalshi-ws-ts` 안에 Kalshi `VenueOrderbookAdapter` 구현 파일이 존재하고, `orderbook-reconstructor.ts` 에 `msg.channel` / `orderbook_snapshot` / `orderbook_delta` 문자열이 0개(거래소 방언은 어댑터에만 존재). `BookEvent.seq` 타입이 `number | null`. Polymarket 어댑터는 0개(MVP3). 재구성기는 venue가 seq를 주지 않을 때 `(venue, ticker)` 별 단조 카운터를 **합성**해 `PredOrderbook.seq` 를 항상 채운다.
   - 수락: 이 과제 동안 producer 프로세스를 단 한 번도 띄우지 않는다(Kafka 연결 0개 불변식).
-- [ ] **U7b — 키 헬퍼 fail-fast (§4.4 재작성분이 SSOT).** 아키텍트가 "U15"로 명명했으나 본 문서의 U15(로깅 정리)와 충돌하므로 **U7b로 부여한다** — 본 문서 어디에서도 이 작업을 U15로 부르지 않는다. 선행: U5c, U7 / **U8보다 먼저**(라이터가 이 키를 소비한다)
+- [x] **U7b — 키 헬퍼 fail-fast (§4.4 재작성분이 SSOT).** 아키텍트가 "U15"로 명명했으나 본 문서의 U15(로깅 정리)와 충돌하므로 **U7b로 부여한다** — 본 문서 어디에서도 이 작업을 U15로 부르지 않는다. 선행: U5c, U7 / **U8보다 먼저**(라이터가 이 키를 소비한다)
   - 결함: 헬퍼가 빈 성분을 필터링해 인자가 빠지면 실패 대신 키가 **짧아진다**. `orderbookKey('polymarket', ticker, null)` → `ob|polymarket|{ticker}` 가 되어 그 티커의 전 스냅샷이 한 키로 뭉치고, `idempotency_key` 가 정렬 키 마지막 성분이라 ReplacingMergeTree가 **세션 전체를 1행으로 접는다** — 중복 제거가 아니라 데이터 유실이다. 더 나쁜 사례: `predTradeKey`/`cryptoTradeKey` 의 `nativeId` 는 proto상 `optional string trade_id` 라, 거래소가 체결 id를 안 주면 **그 티커의 모든 체결**이 1행으로 접힌다 — MVP3의 Kalshi 경로에서 실제로 발생 가능. `prod-crypto-binance-ts` 는 호출부에서 이미 복합 fallback으로 방어하고 있었고(위험이 한 곳에서만 패치된 상태), 아키텍트가 그 fallback을 계약으로 승격했다.
   - 수락: 헬퍼가 고정 arity로 전 성분을 요구하고 누락 시 **throw**(`rules/core.md` fail-fast). 5개 키 함수 출력이 재작성된 §4.4와 문자 단위 일치.
   - 수락: 체결 키에 복합 fallback이 계약으로 구현되어 있다(`trade_id` 부재 시의 대체 성분).
@@ -147,6 +149,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
 - [ ] **U12 — 진단: 실 Kalshi `orderbook_delta` 원본 1건 캡처 (§8 Q4-b). 수정 금지.** 선행: U5
   - 수락: 캡처된 원본 JSON 파일 1건이 저장소에 존재하고, 어느 필드가 시퀀스를 담는지 결론이 `STATUS.md` 한 줄로 기록된다.
   - 수락: 캡처 전후 reconstructor 경로의 `git diff` 가 비어 있다(수정 금지 확인). 캡처 중 Kafka publish 0건.
+  - **범위 확대 검토(판정 대기)**: 현재 `orderbook_delta` 만 명시하나 **ticker 채널도 캡처**가 필요하다 — U6가 남긴 규칙 5 예외(Kalshi tick/orderbook이 `Date.now()` 사용, trade는 미검증 `created_time`)가 이 캡처로만 해소된다.
   - 성격: 읽기 전용 1회 구독 → 1건 로그 → 종료. `KALSHI_API_KEY_ID`/`KALSHI_PRIVATE_KEY_PATH` 필요.
 - [ ] **U13 — U12 결과에 따른 reconstructor 수정 (+ 필요시 세션 성분).** 선행: U12
   - **블로커: Q4 — Kalshi `seq` 가 재접속(구독) 단위로 리셋되는가?** U12 캡처 결과가 나오기 전에는 착수 금지. 리셋된다면 idempotency key에 세션 성분을 추가해야 한다(§4.4 인용문). **갱신**: U8의 합성 카운터도 producer 재시작 시 리셋되므로 재시작 간 충돌은 어느 경로에서도 남는다 — 세션 성분은 선택이 아니라 **MVP3 필수 선행**이며 U12/U13이 그 게이트다.
