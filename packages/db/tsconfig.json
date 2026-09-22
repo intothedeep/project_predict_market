@@ -1,0 +1,16 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "rootDir": "src",
+        "outDir": "dist"
+    },
+    "include": ["src"],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "src/utils/x_raw-query.ts",
+        "src/inserter/x_insert-csv.ts",
+        "src/inserter/x_batch-buffer.ts",
+        "src/writers/x_csv-writer.ts"
+    ]
+}
