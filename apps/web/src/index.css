@@ -1,0 +1,121 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   Collection dashboard — design tokens
+   Ported from project_lopez_auto/apps/colony_client_web/app/globals.css
+   (owner-picked reference, 2026-09-22). Kept: oklch tokens, square corners,
+   whole-UI mono, dark hairline borders, chroma reserved for signals only.
+   Dropped: `tw-animate-css` import (not installed here) and the colony
+   workflow palette — replaced with this dashboard's own signals below.
+   ============================================================ */
+
+:root {
+    --radius: 0rem;
+
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    /* dark hairlines, same directive as the reference */
+    --border: oklch(0.55 0 0);
+    --input: oklch(0.55 0 0);
+    --ring: oklch(0.45 0 0);
+
+    /* signal palette — the only saturated colours on screen.
+       bid/ask = orderbook side, fresh/stale = freshness, mock/live = feed,
+       disconnected = SSE stream state (independent of data staleness). */
+    --signal-bid: oklch(0.55 0.16 145);
+    --signal-ask: oklch(0.58 0.22 25);
+    --signal-fresh: oklch(0.55 0.16 145);
+    --signal-stale: oklch(0.58 0.22 25);
+    --signal-mock: oklch(0.62 0.19 55);
+    --signal-live: oklch(0.55 0.16 260);
+    --signal-disconnected: oklch(0.58 0.22 25);
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-signal-bid: var(--signal-bid);
+    --color-signal-ask: var(--signal-ask);
+    --color-signal-fresh: var(--signal-fresh);
+    --color-signal-stale: var(--signal-stale);
+    --color-signal-mock: var(--signal-mock);
+    --color-signal-live: var(--signal-live);
+    --color-signal-disconnected: var(--signal-disconnected);
+
+    /* Square corners — no rounded edges. */
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
+    --radius-xl: 0px;
+
+    /* whole-UI mono. next/font is unavailable in Vite — @fontsource ships
+       the actual font files instead, imported in main.tsx; the family name
+       is written literally here (the reference's self-referencing
+       var(--font-mono) only resolves because next/font injects it on
+       <html>, which nothing does in this app). */
+    --font-sans: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: 'cv11', 'ss01';
+    }
+}
+
+/* Thin, square, minimal scrollbars — see globals.css reference for why
+   scrollbar-width is intentionally not set alongside ::-webkit-scrollbar. */
+@layer utilities {
+    .thin-scroll::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+    }
+    .thin-scroll::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .thin-scroll::-webkit-scrollbar-thumb {
+        background: oklch(0.78 0 0);
+        border-radius: 0;
+        border: 0;
+    }
+    .thin-scroll::-webkit-scrollbar-thumb:hover {
+        background: var(--muted-foreground);
+    }
+    .thin-scroll::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+}
