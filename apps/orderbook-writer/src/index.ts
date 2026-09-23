@@ -76,6 +76,7 @@ async function main(): Promise<void> {
                     ticker: snapshot.ticker,
                     timeMs: snapshot.timeMs.toString(),
                     seq: snapshot.seq?.toString(),
+                    idempotencyKey: snapshot.idempotencyKey,
                     result,
                 });
             })

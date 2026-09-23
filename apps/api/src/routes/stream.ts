@@ -1,13 +1,17 @@
 /**
  * GET /api/stream — SSE push of orderbook updates (§8 Q3: SSE, no browser
  * WebSocket). Polls `ob:index` + each hash on an interval (no Redis
- * keyspace notifications — that's a server config change, out of U9's
- * scope) and re-broadcasts every known ticker's current OrderbookSnapshot
- * each tick (not diffed) — the mock replay's LWW guard (§4.4) makes
- * time_ms stop advancing once the file loop passes its own peak, so a
- * change-only stream goes silent after one pass; broadcasting every tick
- * keeps `stale_ms` visibly live in the stream and keeps this the same
- * shape apps/web reuses from the REST route.
+ * keyspace notifications — that's a server config change, out of scope) and
+ * emits an event only when a ticker's `time_ms` actually changed since the
+ * last poll (change-detecting, per-connection).
+ *
+ * U9 shipped an unconditional 500ms re-broadcast instead, to paper over the
+ * mock replayer looping without rebasing (Redis froze after pass 1, so a
+ * change-only stream went silent). U17 (§4.5.1) fixed the replayer itself —
+ * time_ms now genuinely advances every pass — so the re-broadcast is no
+ * longer needed and is removed: it kept the stream *looking* alive over
+ * frozen data, which is the opposite of the freshness the EXIT criterion
+ * demonstrates.
  */
 
 import { Hono } from 'hono';
@@ -29,6 +33,11 @@ export function createStreamRoute(redis: RedisClient): Hono {
                 aborted = true;
             });
 
+            // Per-connection: last time_ms seen for each "{venue}:{ticker}"
+            // member, so a fresh connection sends initial state for
+            // everything and later polls send only what actually changed.
+            const lastSeenTimeMs = new Map<string, string>();
+
             while (!aborted) {
                 const members = await listOrderbookIndex(redis);
                 for (const member of members) {
@@ -38,6 +47,10 @@ export function createStreamRoute(redis: RedisClient): Hono {
                     const hash = await getOrderbookHash(redis, venue, ticker);
                     const snapshot = toOrderbookSnapshot(hash, Date.now());
                     if (!snapshot) continue;
+
+                    const timeMsKey = hash.time_ms;
+                    if (lastSeenTimeMs.get(member) === timeMsKey) continue;
+                    lastSeenTimeMs.set(member, timeMsKey);
 
                     await stream.writeSSE({
                         event: 'orderbook',

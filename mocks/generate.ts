@@ -31,9 +31,16 @@ const POLY_TICKER =
 const BINANCE_SYMBOL = 'MOCK_BTCUSDT';
 const COINBASE_SYMBOL = 'MOCK_BTC-USD';
 
-// Deterministic base time (doc's own §3.7 example value) — never Date.now(),
-// so byte-identity and re-runs are reproducible.
-const BASE_TS = 1758500000123;
+// Anchored at generation time (00.architecture.mvp1.md §4.5.1/§3.6 ruling,
+// U17): a hardcoded absolute date only gets older every day the mock set
+// sits unregenerated, and a display permanently stuck at "N days stale"
+// cannot demonstrate the EXIT criterion ("kill the writer and it goes
+// stale"). The replayer's pass offset (mock-source.ts) carries this forward
+// to "now" at replay time regardless of when generate.ts last ran, so this
+// no longer needs to be a fixed literal for byte-identity — §3.6's
+// byte-identity claim is about the .jsonl lines being real wire bytes, not
+// about BASE_TS being a fixed constant.
+const BASE_TS = Date.now();
 
 type Row = { topic: string; table: string; data: Record<string, unknown> };
 const rows: Row[] = [];
