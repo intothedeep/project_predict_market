@@ -4,23 +4,14 @@
  *
  * No I/O here (rules/development/code.md — domain logic performs no side
  * effects). `redis-reader.ts` fetches the hash; this module only shapes it.
+ *
+ * The `OrderbookSnapshot`/`OrderbookLevel` types live in `@repo/schema`'s
+ * `view/` (§3.5.1, U18) — this module only assembles values of that shape,
+ * it does not own the type.
  */
 
-export interface OrderbookLevel {
-    price: string;
-    qty: string;
-}
-
-export interface OrderbookSnapshot {
-    venue: string;
-    ticker: string;
-    time_ms: number;
-    seq: number;
-    bids: OrderbookLevel[];
-    asks: OrderbookLevel[];
-    feed: 'mock' | 'live';
-    stale_ms: number;
-}
+import type { OrderbookSnapshot, OrderbookLevel } from '@repo/schema';
+import { STALE_THRESHOLD_MS } from './stale-threshold';
 
 /** Raw `HGETALL ob:{venue}:{ticker}` result — all values are strings. */
 export type RawOrderbookHash = Record<string, string>;
@@ -71,5 +62,6 @@ export function toOrderbookSnapshot(
         asks,
         feed: computeFeed(hash.ticker),
         stale_ms: nowMs - timeMs,
+        stale_threshold_ms: STALE_THRESHOLD_MS,
     };
 }

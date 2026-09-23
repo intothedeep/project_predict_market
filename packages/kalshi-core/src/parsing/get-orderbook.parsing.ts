@@ -1,4 +1,4 @@
-import type { TOrderbookLevelTuple, TOrderbookSnapshot } from '../types';
+import type { TOrderbookLevelTuple, KalshiWsOrderbook } from '../types';
 
 export function parseLevels(raw: unknown): TOrderbookLevelTuple[] {
     if (!Array.isArray(raw)) return [];
@@ -14,7 +14,7 @@ export function parseLevels(raw: unknown): TOrderbookLevelTuple[] {
     return result;
 }
 
-export function parseOrderbook(raw: unknown, ticker: string): TOrderbookSnapshot | null {
+export function parseOrderbook(raw: unknown, ticker: string): KalshiWsOrderbook | null {
     if (raw == null || typeof raw !== 'object') return null;
     const wrapper = raw as Record<string, unknown>;
     const ob_fp = wrapper.orderbook_fp as Record<string, unknown> | undefined;

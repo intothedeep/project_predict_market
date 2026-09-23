@@ -22,3 +22,6 @@ export type {
 export type { CryptoTrade, CryptoTick } from './generated/ts/crypto_pb';
 
 export type { PriceLevel } from './generated/ts/common_pb';
+
+// ─── view/ — API contracts derived from the wire layer (§3.5.1) ──────────────
+export type { OrderbookSnapshot, OrderbookLevel } from './view/orderbook-snapshot';

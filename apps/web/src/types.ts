@@ -1,24 +1,9 @@
 /**
- * OrderbookSnapshot (00.architecture.mvp1.md §3.5) mirrored from
- * apps/api/src/snapshot.ts. Duplicated, not imported: `@repo/api` has no
- * `exports` field and an app-to-app dependency in the DAG isn't in the
- * architecture (apps -> packages -> libs, no app-to-app edges, per
- * rules/development/code.md). See final report for this as an architect
- * question rather than a silent reconciliation.
+ * OrderbookSnapshot (00.architecture.mvp1.md §3.5) — re-exported from
+ * `@repo/schema`'s `view/`, the SSOT for this type (§3.5.1, U18). Both
+ * `apps/api` and `apps/web` import it from there, so a field added on one
+ * side is a type error on the other instead of a silent runtime drift —
+ * see the U18 report for the deliberate-breakage proof.
  */
 
-export interface OrderbookLevel {
-    price: string;
-    qty: string;
-}
-
-export interface OrderbookSnapshot {
-    venue: string;
-    ticker: string;
-    time_ms: number;
-    seq: number;
-    bids: OrderbookLevel[];
-    asks: OrderbookLevel[];
-    feed: 'mock' | 'live';
-    stale_ms: number;
-}
+export type { OrderbookSnapshot, OrderbookLevel } from '@repo/schema';

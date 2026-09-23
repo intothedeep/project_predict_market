@@ -29,18 +29,11 @@ export function computeLiveStaleMs(
 }
 
 /**
- * Threshold is not specified anywhere in the architecture (grepped — only
- * the field's existence is locked, not a cutoff). Measured against a live
- * healthy writer (`curl /api/orderbook/kalshi/...` every 1-3s): `stale_ms`
- * oscillates around 4.0-4.3s, not the ~1.2s the pass-span math alone would
- * suggest — the mock-source anchor is a one-time `floor(diffMs /
- * passSpanMs)` at writer startup (§4.5.1), so it holds a stable few-second
- * baseline offset rather than drifting. 10s gives margin above that
- * observed baseline without hiding real staleness — pending architect
- * confirmation, not a blocker.
+ * §3.5.2 (U18): the threshold is server-decided and arrives on the
+ * snapshot itself (`stale_threshold_ms`) — only the server knows the
+ * writer's cadence the threshold derives from. The client no longer owns
+ * a hardcoded cutoff; it just compares against what the server sent.
  */
-export const STALE_THRESHOLD_MS = 10000;
-
-export function isFresh(liveStaleMs: number): boolean {
-    return liveStaleMs < STALE_THRESHOLD_MS;
+export function isFresh(liveStaleMs: number, staleThresholdMs: number): boolean {
+    return liveStaleMs < staleThresholdMs;
 }

@@ -33,7 +33,10 @@ export function OrderbookPanel({
                 <span className="text-xs text-muted-foreground">
                     seq {snapshot.seq}
                 </span>
-                <FreshnessBadge liveStaleMs={liveStaleMs} />
+                <FreshnessBadge
+                    liveStaleMs={liveStaleMs}
+                    staleThresholdMs={snapshot.stale_threshold_ms}
+                />
             </div>
             <OrderbookTable bids={snapshot.bids} asks={snapshot.asks} />
         </div>

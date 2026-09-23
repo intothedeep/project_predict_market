@@ -2,11 +2,12 @@ import { isFresh } from '../freshness';
 
 interface FreshnessBadgeProps {
     liveStaleMs: number;
+    staleThresholdMs: number;
 }
 
 /** Always renders the numeric age next to the badge — the threshold never hides the raw number. */
-export function FreshnessBadge({ liveStaleMs }: FreshnessBadgeProps) {
-    const fresh = isFresh(liveStaleMs);
+export function FreshnessBadge({ liveStaleMs, staleThresholdMs }: FreshnessBadgeProps) {
+    const fresh = isFresh(liveStaleMs, staleThresholdMs);
     const color = fresh ? 'bg-signal-fresh' : 'bg-signal-stale';
     const label = fresh ? 'fresh' : 'stale';
     return (
