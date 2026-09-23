@@ -102,9 +102,33 @@ export function createMockSource(
                 );
             }
 
+            // Absolute-timeline scheduling (fixes the drift a re-armed
+            // setTimeout(tick, intervalMs) accumulates from per-tick
+            // processing latency — U18's +138ms/min). `origin` is the fixed
+            // anchor; tick `index`'s due time is always `origin +
+            // index * intervalMs`, so each setTimeout delay is computed
+            // against wall clock, not chained after the previous tick's
+            // work.
+            //
+            // Catch-up policy: if the event loop falls behind by a full
+            // interval or more, `index` jumps forward to the interval that
+            // is due *now* rather than firing the missed ticks back-to-back.
+            // A burst would only emit already-past time_ms values, which the
+            // §4.4 LWW guard would reject anyway — bursting buys nothing and
+            // costs a synchronous pile-up. `index` only ever moves forward
+            // (never re-set backward), so seq/time_ms stay monotonic and
+            // orderbookKey stays fresh per emission.
+            const origin = Date.now();
             let index = 0;
+
             const tick = (): void => {
                 if (stopped) return;
+
+                const expectedIndex = Math.floor(
+                    (Date.now() - origin) / intervalMs
+                );
+                if (expectedIndex > index) index = expectedIndex;
+
                 const i = index % lines.length;
                 const passNumber = n0 + BigInt(Math.floor(index / lines.length));
                 index += 1;
@@ -125,7 +149,10 @@ export function createMockSource(
                         line: lines[i],
                     });
                 }
-                timer = setTimeout(tick, intervalMs);
+
+                const nextDueMs = origin + index * intervalMs;
+                const delay = Math.max(0, nextDueMs - Date.now());
+                timer = setTimeout(tick, delay);
             };
             tick();
         },
