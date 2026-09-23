@@ -12,10 +12,15 @@ export interface PriceLevel {
 export interface BookEvent {
     kind: 'snapshot' | 'delta';
     ticker: string;
-    // null when the venue provides no sequence (§8 Q4) — the reconstructor
-    // synthesizes a per-(venue, ticker) monotonic counter in that case. The
-    // adapter must report the venue's truth as-is, never fabricate a seq.
-    seq: number | null;
+    // The venue's own sequence number, or null when it provides none
+    // (§8 Q4). Gap detection ONLY (§4.0.1) — the adapter must report the
+    // venue's truth as-is, never fabricate a value here. Row identity
+    // (orderbookKey) is a separate field the reconstructor assigns itself;
+    // see emitSeq in orderbook-reconstructor.ts. Splitting the two matters
+    // because a synthesized counter is contiguous by construction, so using
+    // it for gap detection makes `seq > currentSeq + 1` permanently false —
+    // the check would silently never fire.
+    venueSeq: number | null;
     timeMs: number;
     bids: PriceLevel[];
     asks: PriceLevel[];

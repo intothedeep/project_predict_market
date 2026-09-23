@@ -21,6 +21,8 @@
         "src/api/x_get-orderbook-batch.api.ts",
         "src/api/x_get-candlestick.api.ts",
         "src/api/x_get-candlestick-batch.api.ts",
-        "src/api/x_get-trades.api.ts"
+        "src/api/x_get-trades.api.ts",
+        "src/x_registry/x_ticker-registry.ts",
+        "src/x_registry/x_index.ts"
     ]
 }

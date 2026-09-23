@@ -19,7 +19,9 @@ interface BookState {
     // to end).
     bids: Map<string, string>;
     asks: Map<string, string>;
-    lastSeq?: number;
+    // Last venue-supplied sequence seen, for gap detection only (§4.0.1).
+    // Undefined when the venue has never supplied one for this ticker.
+    lastVenueSeq?: number;
 }
 
 const BOOK_TTL_MS = 10 * 60 * 1_000; // 10 minutes
@@ -53,13 +55,18 @@ export function createOrderbookReconstructor(adapter: VenueOrderbookAdapter): {
     stop: () => void;
 } {
     const books = new Map<string, { state: BookState; lastUpdateMs: number }>();
-    // Synthesizes a per-(venue, ticker) monotonic counter when the venue
-    // gives no seq, so the wire's PredOrderbook.seq is always populated
-    // (§4.4 "키 헬퍼의 '빈 성분 제거'는 버그다" — orderbookKey must never
-    // receive a missing seq component). Keyed by ticker only: one
-    // reconstructor instance already exists per venue (this file), so
-    // ticker alone is unambiguous within it.
-    const syntheticSeq = new Map<string, number>();
+    // emitSeq: a per-(venue, ticker) monotonic counter the reconstructor
+    // always assigns itself (§4.0.1) — this is row identity for
+    // orderbookKey, ONLY. It is never used for gap detection: it is
+    // contiguous by construction (we assign it), so comparing it to itself
+    // could never observe a gap. Keyed by ticker only: one reconstructor
+    // instance already exists per venue (this file), so ticker alone is
+    // unambiguous within it.
+    const emitSeqCounters = new Map<string, number>();
+    // Tracks which tickers have already produced the one-time "no venueSeq"
+    // warning below, so a long-running subscription doesn't repeat it per
+    // message (§4.0.1: once per (venue, ticker), at first sight).
+    const warnedNoVenueSeq = new Set<string>();
     let ttlTimer: ReturnType<typeof setInterval> | null = null;
 
     ttlTimer = setInterval(() => {
@@ -67,7 +74,8 @@ export function createOrderbookReconstructor(adapter: VenueOrderbookAdapter): {
         for (const [ticker, entry] of books.entries()) {
             if (now - entry.lastUpdateMs > BOOK_TTL_MS) {
                 books.delete(ticker);
-                syntheticSeq.delete(ticker);
+                emitSeqCounters.delete(ticker);
+                warnedNoVenueSeq.delete(ticker);
             }
         }
     }, TTL_CHECK_INTERVAL_MS);
@@ -85,10 +93,24 @@ export function createOrderbookReconstructor(adapter: VenueOrderbookAdapter): {
         return entry.state;
     }
 
-    function nextSyntheticSeq(ticker: string): number {
-        const n = (syntheticSeq.get(ticker) ?? 0) + 1;
-        syntheticSeq.set(ticker, n);
+    function nextEmitSeq(ticker: string): number {
+        const n = (emitSeqCounters.get(ticker) ?? 0) + 1;
+        emitSeqCounters.set(ticker, n);
         return n;
+    }
+
+    // §4.0.1 — a venue with no sequence has no gap detection and MUST
+    // declare a fallback in the adapter's gapPolicy (MVP3 scope, not built
+    // here). Until then this warns once per ticker so the absence of
+    // protection is visible instead of silently passing.
+    function warnIfNoGapDetection(ticker: string): void {
+        if (warnedNoVenueSeq.has(ticker)) return;
+        warnedNoVenueSeq.add(ticker);
+        log(
+            'warn',
+            'orderbook-reconstructor',
+            `${adapter.venue}:${ticker} has no venueSeq — gap detection is disabled for this ticker (§4.0.1)`
+        );
     }
 
     function publishRawEvent(event: BookEvent, seq: number): void {
@@ -130,42 +152,44 @@ export function createOrderbookReconstructor(adapter: VenueOrderbookAdapter): {
 
             const book = getOrCreateBook(event.ticker);
 
+            if (event.venueSeq == null) {
+                warnIfNoGapDetection(event.ticker);
+            }
+
             if (event.kind === 'snapshot') {
                 applyLevels(book.bids, event.bids, true);
                 applyLevels(book.asks, event.asks, true);
-                const seq = event.seq ?? nextSyntheticSeq(event.ticker);
-                book.lastSeq = seq;
+                book.lastVenueSeq = event.venueSeq ?? undefined;
+                const emitSeq = nextEmitSeq(event.ticker);
 
-                publishRawEvent(event, seq);
-                publishFullBook(event.ticker, book, seq, event.timeMs);
+                publishRawEvent(event, emitSeq);
+                publishFullBook(event.ticker, book, emitSeq, event.timeMs);
                 return;
             }
 
-            // delta
-            const currentSeq = book.lastSeq ?? 0;
-            let seq: number;
-
-            if (event.seq != null) {
-                seq = event.seq;
-                if (seq > currentSeq + 1) {
+            // delta — gap detection (①) uses venueSeq exclusively; row
+            // identity (②) uses emitSeq exclusively. They are never mixed
+            // (§4.0.1).
+            if (event.venueSeq != null) {
+                const currentVenueSeq = book.lastVenueSeq ?? 0;
+                if (event.venueSeq > currentVenueSeq + 1) {
                     log(
                         'warn',
                         'orderbook-reconstructor',
-                        `sequence gap detected for ${adapter.venue}:${event.ticker}: expected ${currentSeq + 1}, got ${seq}`
+                        `sequence gap detected for ${adapter.venue}:${event.ticker}: expected ${currentVenueSeq + 1}, got ${event.venueSeq}`
                     );
                     reconnect();
                     return;
                 }
-            } else {
-                seq = nextSyntheticSeq(event.ticker);
+                book.lastVenueSeq = event.venueSeq;
             }
 
-            book.lastSeq = seq;
+            const emitSeq = nextEmitSeq(event.ticker);
             applyLevels(book.bids, event.bids, false);
             applyLevels(book.asks, event.asks, false);
 
-            publishRawEvent(event, seq);
-            publishFullBook(event.ticker, book, seq, event.timeMs);
+            publishRawEvent(event, emitSeq);
+            publishFullBook(event.ticker, book, emitSeq, event.timeMs);
         },
         stop: () => {
             if (ttlTimer) {
@@ -173,7 +197,8 @@ export function createOrderbookReconstructor(adapter: VenueOrderbookAdapter): {
                 ttlTimer = null;
             }
             books.clear();
-            syntheticSeq.clear();
+            emitSeqCounters.clear();
+            warnedNoVenueSeq.clear();
         },
     };
 }

@@ -8,15 +8,14 @@ import {
     KALSHI_SERIES_CATEGORY,
 } from '@repo/env';
 
-import { createKalshiSigner, getSeriesByCategory } from '@repo/kalshi-core';
-import { makeWsHeaders } from './use-ws/connect.ws';
+import { getSeriesByCategory } from '@repo/kalshi-core';
 import { createConnectionPool } from './use-ws/connection-pool';
 import { subscribePublic } from './use-ws/subscribe-public.ws';
 import { handleMarketTick } from './use-ws/handle-market-tick.ws';
 import { handleTrade } from './use-ws/handle-trade.ws';
 import { createOrderbookDeltaHandler } from './use-ws/handle-orderbook-delta.ws';
 import { initRegistry, startRegistryRefresh } from './use-registry/init-registry';
-import { getActiveTickers } from '@repo/kalshi-core';
+import { createTickerRegistry } from './use-registry/ticker-registry';
 
 // MVP1 trim (00.architecture.mvp1.md §7): private channel handlers
 // (fill/market_position/market_lifecycle/event_lifecycle/multivariate_*/
@@ -44,19 +43,16 @@ async function start(): Promise<void> {
     log('info', LOG_PREFIX, `KALSHI_API_KEY_ID=${KALSHI_API_KEY_ID}`);
     log('info', LOG_PREFIX, `KALSHI_PEM_PATH=${KALSHI_PEM_PATH}`);
 
-    const sign = createKalshiSigner({
-        apiKeyId: KALSHI_API_KEY_ID ?? '',
-        privateKeyPath: KALSHI_PEM_PATH,
-    });
-
     // Series filter based on KALSHI_SERIES_CATEGORY: 'all' | 'crypto' | 'hot'
     // (the weather domain is excluded entirely — §1, §7 env fix).
     const seriesFilter = getSeriesByCategory(KALSHI_SERIES_CATEGORY);
     log('info', LOG_PREFIX, `seriesFilter (${KALSHI_SERIES_CATEGORY}) = ${seriesFilter.length} series`);
 
     // Registry init via direct Kalshi REST call (§7.1) — no analytics-store
-    // read dependency, no dropped-app market-list topic.
-    await initRegistry(seriesFilter);
+    // read dependency, no dropped-app market-list topic. Factory instance,
+    // not a module singleton (§7.1.1, U16 ②).
+    const registry = createTickerRegistry();
+    await initRegistry(registry, seriesFilter);
     log('info', LOG_PREFIX, `registry initialized (category=${KALSHI_SERIES_CATEGORY}, ${seriesFilter.length} series)`);
 
     const obHandler = createOrderbookDeltaHandler(() => {
@@ -79,10 +75,19 @@ async function start(): Promise<void> {
 
         // For simplicity, create one pool with all tickers
         // In production, you might shard into multiple pools
+        // No auth headers on this pool (§7.2, U16 ③) — least privilege is
+        // the default, and nothing here has needed credentials. CAVEAT: the
+        // old (pre-U16) code signed `GET /trade-api/ws/v2` — the connection
+        // path itself — which hints Kalshi may require auth to *connect*,
+        // with "public/private" naming the channel rather than the
+        // connection. If so, this removal is wrong and the old code was
+        // accidentally right. Not resolved by reading code; U12 settles it —
+        // a connection failure there is the evidence that reverses this.
+        // createKalshiSigner/makeWsHeaders are not deleted (kalshi-core/src/
+        // auth, ./connect.ws.ts) so re-adding headers is a one-line revert.
         const pool = createConnectionPool({
             name: `${LOG_PREFIX}-public-${poolIndex}`,
             url: WS_URL,
-            headers: () => makeWsHeaders(sign),
             onOpen: (ws) => {
                 subscribePublic(ws, tickers, 1);
                 log(
@@ -115,10 +120,11 @@ async function start(): Promise<void> {
         return pool;
     }
 
-    let currentTickers = getActiveTickers();
+    let currentTickers = registry.getActiveTickers();
     publicPool = createPublicPool(currentTickers);
 
     const registryRefresh = startRegistryRefresh(
+        registry,
         (newTickers) => {
             const tickersChanged =
                 currentTickers.length !== newTickers.length ||

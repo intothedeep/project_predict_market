@@ -1,7 +1,6 @@
 export * from './auth';
 export * from './api';
 export * from './parsing';
-export * from './registry';
 export * from './kafka';
 export {
     CRYPTO_SERIES_ARR,

@@ -1,1 +1,1 @@
-export * from './ticker-registry';
+export * from './x_ticker-registry';

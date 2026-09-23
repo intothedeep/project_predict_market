@@ -2,28 +2,17 @@ import { predTradeKey } from '@repo/common';
 import { routePublish } from '@repo/db';
 import { KAFKA_TOPICS } from '@repo/kalshi-core';
 import { parseWsTrade } from '@repo/kalshi-core';
+import { RECEIPT_TIME_UNTIL_U12 } from './receipt-time';
 
 const VENUE = 'kalshi';
-
-// created_time is Kalshi's event timestamp for a trade — may be an ISO
-// string or an epoch (s or ms). Falls back to receive time only when the
-// venue omits it (§3.7 rule 5).
-function toEventTimeMs(value: unknown): number {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return value > 1_000_000_000_000 ? value : value * 1_000;
-    }
-    if (typeof value === 'string' && value.trim()) {
-        const parsed = Date.parse(value);
-        if (Number.isFinite(parsed)) return parsed;
-    }
-    return Date.now();
-}
 
 export function handleTrade(msg: Record<string, unknown>): void {
     const trade = parseWsTrade(msg);
     if (!trade) return;
 
-    const timeMs = toEventTimeMs(trade.createdTime);
+    // See ./receipt-time.ts — §3.7 rule 5 exception, U16 ①. Kalshi trade no
+    // longer reads `created_time`; the whole venue is on receipt time.
+    const timeMs = RECEIPT_TIME_UNTIL_U12();
 
     // trade_id is optional on the wire (proto: optional string trade_id).
     // A venue that omits it must get a deterministic composite fallback

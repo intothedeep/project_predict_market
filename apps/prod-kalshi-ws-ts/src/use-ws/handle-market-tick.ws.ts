@@ -1,6 +1,7 @@
 import { predTickKey } from '@repo/common';
 import { routePublish } from '@repo/db';
 import { KAFKA_TOPICS } from '@repo/kalshi-core';
+import { RECEIPT_TIME_UNTIL_U12 } from './receipt-time';
 
 const VENUE = 'kalshi';
 
@@ -17,10 +18,9 @@ export function handleMarketTick(msg: Record<string, unknown>): void {
     const ticker = String(msg.ticker ?? msg.market_ticker ?? '');
     if (!ticker) return;
 
-    // Kalshi's ticker WS channel carries no confirmed event-timestamp field
-    // in this codebase (unlike trade's created_time) — falls back to receive
-    // time, consistently for this message type only (§3.7 rule 5).
-    const timeMs = Date.now();
+    // See ./receipt-time.ts — §3.7 rule 5 exception, U16 ①. Whole Kalshi
+    // venue is on receipt time until U12.
+    const timeMs = RECEIPT_TIME_UNTIL_U12();
     const key = predTickKey(VENUE, ticker, timeMs, tickSeq++);
 
     routePublish(KAFKA_TOPICS.ws.MARKET_TICK_WS, key, {

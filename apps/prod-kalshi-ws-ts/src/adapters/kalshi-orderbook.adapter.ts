@@ -9,6 +9,7 @@ import type {
     PriceLevel,
     VenueOrderbookAdapter,
 } from './venue-orderbook-adapter';
+import { RECEIPT_TIME_UNTIL_U12 } from '../use-ws/receipt-time';
 
 function toPriceLevels(levels: unknown): PriceLevel[] {
     if (!Array.isArray(levels)) return [];
@@ -20,10 +21,6 @@ function toPriceLevels(levels: unknown): PriceLevel[] {
     });
 }
 
-// Kalshi orderbook WS messages carry no exchange event timestamp (unlike
-// trade/tick messages), so timeMs falls back to receive time — consistently
-// for this message type only, per §3.7 rule 5 ("한 venue 안에서 두 출처를
-// 섞지 않는다").
 export function createKalshiOrderbookAdapter(): VenueOrderbookAdapter {
     return {
         venue: 'kalshi',
@@ -41,13 +38,15 @@ export function createKalshiOrderbookAdapter(): VenueOrderbookAdapter {
             if (!ticker) return null;
 
             const seqRaw = raw.sequence_number;
-            const seq = typeof seqRaw === 'number' ? seqRaw : null;
+            const venueSeq = typeof seqRaw === 'number' ? seqRaw : null;
 
             return {
                 kind,
                 ticker,
-                seq,
-                timeMs: Date.now(),
+                venueSeq,
+                // See ../use-ws/receipt-time.ts — §3.7 rule 5 exception,
+                // U16 ①. Whole Kalshi venue is on receipt time until U12.
+                timeMs: RECEIPT_TIME_UNTIL_U12(),
                 bids: toPriceLevels(raw.bids),
                 asks: toPriceLevels(raw.asks),
             };
