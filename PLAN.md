@@ -112,17 +112,22 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: 체결 키에 복합 fallback이 계약으로 구현되어 있다(`trade_id` 부재 시의 대체 성분).
   - 수락(고의 파손 — 이 과제의 핵심): **함수마다 각각** 성분 하나를 빼고 호출해 throw 하는 것을 관찰한다(1회 대표 검증 불가, 5회).
   - 수락: mock 재생성 후 6개 `.jsonl` 이 **바이트 단위로 불변**(mock이 계약의 참조 구현이므로).
-- [ ] **U8 — `apps/orderbook-writer` + `MessageSource` + `mockSource` + Redis Lua LWW 가드 (§4.2, §4.4, §4.5).** 선행: U5, U7, U7b
+- [x] **U8 — `apps/orderbook-writer` + `MessageSource` + `mockSource` + Redis Lua LWW 가드 (§4.2, §4.4, §4.5).** 선행: U5, U7, U7b
   - 범위: 와이어의 `PredOrderbook.seq` 는 **항상 채워진다** — venue가 시퀀스를 주지 않으면 재구성기가 `(venue, ticker)` 별 단조 카운터를 합성한다(합성 책임은 U6/U8). `BookEvent.seq: number | null` 계약은 그대로(어댑터는 venue의 사실을 보고한다). `time_ms` 로 대체하지 않는다 — 그것은 venue 이벤트 시각이라 같은 타임스탬프의 두 스냅샷이 여전히 충돌한다.
   - 수락: `MOCK_SOURCE=1` 로 기동 후 `redis-cli KEYS 'ob:*'` 에 `ob:kalshi:MOCK_*` 와 `ob:polymarket:MOCK_POLY_*` 가 모두 존재, `SCARD ob:index` >= 2, `TTL writer:heartbeat` <= 60.
   - 수락(고의 파손): 더 작은 `time_ms` 스냅샷을 재생 → `HGET ob:kalshi:MOCK_… time_ms` 값 불변(LWW 가드 동작 관찰) 후 정리.
   - 수락(고의 파손): `MOCK_SOURCE` 없이 기동 → 0이 아닌 종료코드 + error 로그로 죽고 `KEYS 'ob:*'` 가 비어 있다(§4.5 — mock은 기본값이 아니다).
   - 주의: `VenueOrderbookAdapter` 경계는 **producer 쪽(U6/§4.0·§4.1)** 소관이다. 라이터는 풀북 적용 전용 무상태이므로 어댑터를 두지 않는다 (§4.0·§4.1·§9 모두 일치, 2026-09-22 아키텍트 추인).
-- [ ] **U9 — `apps/api` (Hono): `OrderbookSnapshot` 계약, `/api/orderbook/:venue/:ticker`, Redis 읽기, CH `FINAL` 읽기, SSE (§3.5).** 선행: U4, U8
+- [x] **U9 — `apps/api` (Hono): `OrderbookSnapshot` 계약, `/api/orderbook/:venue/:ticker`, Redis 읽기, CH `FINAL` 읽기, SSE (§3.5).** 선행: U4, U8
   - 수락: `curl` 로 kalshi/polymarket 두 티커 모두 §3.5 JSON 형태 반환 — `feed: "mock"`, `stale_ms` 는 숫자, `price`/`qty` 는 문자열.
   - 수락: `curl -N` SSE 엔드포인트가 이벤트를 연속 출력.
   - 수락(고의 파손): 없는 venue로 요청 → 4xx. writer를 정지시킨 뒤 재조회 → `stale_ms` 가 증가하는 것을 관찰 후 재기동.
+  - **판정 대기(U9 제목 문구)**: 제목의 "CH `FINAL` 읽기"는 §5.6("대시보드의 현재 오더북은 `FINAL` 경로를 타지 않는다")과 어긋나고, CH 기반 라우트·응답 형태가 어디에도 정의돼 있지 않으며 U9 수락 기준도 그것을 검증하지 않는다. 라우트를 정의하든지 문구가 스테일이든지 — 아키텍트 판정 대기(U9 자체는 Redis 경로로 종결).
+- [x] **U16 — U6 잔여 3건 해소 (아키텍트 판정 반영, `fef8ef3`).** Kalshi venue 전체를 수신 시각으로 이관하되 `RECEIPT_TIME_UNTIL_U12()` 라는 명시적 이름 뒤에 두고 호출부에 규칙 5와 U12를 인용 — 예외가 실수처럼 보이지 않고 드러나게. Binance/Coinbase 무수정(규칙 5 준수 유지). 앱 로컬 registry를 TTL 축출·화이트리스트와 함께 복원하고 `kalshi-core/src/registry/` 는 `x_` 로 내림. 공개 WS 풀에서 인증 헤더 제거(서명 코드는 유지, 되돌림 가설을 제거 지점에 기록 — U12용). `BookEvent.seq` 를 `venueSeq`(갭 감지 전용)와 `emitSeq`(키 동일성 전용)로 분리, `venueSeq` 가 null이면 `(venue, ticker)` 당 1회 경고. 선행: U6
+  - **판정 대기**: 복원된 registry의 화이트리스트를 `['active','initialized','inactive']` → `['open']` 로 바꿨다. 구 리터럴은 드롭된 ClickHouse 뷰의 어휘이지 Kalshi REST의 어휘가 아니라, 그대로 쓰면 `getActiveTickers()` 가 영원히 `[]` 를 반환한다. 확인 대기.
 - [ ] **U10 — `apps/web` (Vite + React) 수집 대시보드 1화면.** venue 선택 + 오더북 + freshness + `feed` 배지. 선행: U9
+  - **블로커 (아키텍트 판정 대기 — 착수 금지)**: mock 재생 루프와 U8의 LWW 가드가 상쇄된다. `.jsonl` 을 처음부터 다시 재생하면 2회차 이후 쓰기가 전부 stale로 거부되어 **Redis가 더는 변하지 않는다** — MVP1 EXIT는 두 venue 오더북이 화면에서 *갱신*될 것을 요구하는데 1회차 이후 아무것도 갱신되지 않는다. U9의 SSE가 500ms마다 현재 상태를 재방송해 **데이터는 얼어 있는데 스트림만 살아 보이는** 상태를 만든다.
+  - **블로커 (판정 대기)**: `stale_ms` 가 약 366일로 나온다 — 계산은 맞고 mock 타임스탬프가 2025-09-22다. U10이 freshness를 렌더해야 하므로 착수 전 결정 필요.
   - 수락: 브라우저에서 **kalshi와 polymarket mock 오더북이 둘 다 갱신**된다(Kalshi 하드코딩 불가 증명).
   - 수락: 77자리 Polymarket CLOB token id 티커가 레이아웃을 깨지 않고 렌더된다.
   - 수락(고의 파손): writer 정지 → freshness 표시가 눈에 띄게 stale로 바뀐다. 재기동 시 복구.
@@ -135,7 +140,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: `apps/` + `packages/` 전역에서 `console.log|console.error` 검색 0건(logger 경유만).
   - 수락: 전 흐름 1회 기동 중 stdout의 모든 줄이 `jq .` 를 통과한다(파싱 실패 줄 0개).
 
-**MVP1 종료 판정**: 위 16개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
+**MVP1 종료 판정**: 위 17개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
 
 ---
 
