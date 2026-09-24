@@ -37,6 +37,6 @@ async function main() {
 }
 
 main().catch((e) => {
-    console.error('Fatal:', e);
+    log('error', 'binance', 'fatal', { error: e });
     process.exit(1);
 });

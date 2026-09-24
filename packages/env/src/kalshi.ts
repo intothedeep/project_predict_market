@@ -39,12 +39,6 @@ export const KALSHI_PEM_PATH = path.resolve(
     KALSHI_ENV.KALSHI_PRIVATE_KEY_PATH ?? '.env.kalshi.pem'
 );
 
-console.log('>> path:: ', {
-    KALSHI_PRIVATE_KEY_PATH: KALSHI_ENV.KALSHI_PRIVATE_KEY_PATH,
-    cwd: process.cwd(),
-    KALSHI_PEM_PATH,
-});
-
 export const KALSHI_API_KEY_ID = KALSHI_ENV.KALSHI_API_KEY_ID;
 export const KALSHI_WS_URL =
     KALSHI_ENV.KALSHI_WS_URL ?? 'wss://demo-api.kalshi.co/trade-api/ws/v2';

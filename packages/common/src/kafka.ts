@@ -267,10 +267,7 @@ class BufferedKafkaProducer {
         message: Record<string, unknown>
     ): Promise<void> {
         if (DRY_RUN) {
-            console.log(
-                `\n[DRY_RUN: KAFKA MOCK] Topic: ${topic}\nMessage:`,
-                JSON.stringify(message, null, 2)
-            );
+            log('info', 'kafka', `DRY_RUN send`, { topic, message });
             return;
         }
 
@@ -293,9 +290,10 @@ class BufferedKafkaProducer {
         bytes: Uint8Array
     ): Promise<void> {
         if (DRY_RUN) {
-            console.log(
-                `[DRY_RUN: KAFKA PROTO] Topic: ${topic}, ${bytes.length} bytes`
-            );
+            log('info', 'kafka', `DRY_RUN send binary`, {
+                topic,
+                bytes: bytes.length,
+            });
             return;
         }
 
@@ -323,9 +321,10 @@ class BufferedKafkaProducer {
         bytes: Uint8Array
     ): Promise<void> {
         if (DRY_RUN) {
-            console.log(
-                `[DRY_RUN: KAFKA JSON] Topic: ${topic}, ${bytes.length} bytes`
-            );
+            log('info', 'kafka', `DRY_RUN send json wire`, {
+                topic,
+                bytes: bytes.length,
+            });
             return;
         }
 
@@ -351,7 +350,7 @@ async function getProducer(topic: Topic): Promise<BufferedKafkaProducer> {
     if (!producer) {
         producer = new BufferedKafkaProducer(topic);
         producers.set(topic, producer);
-        console.log('>> kafka producer inited: ', { topic, producer });
+        log('debug', 'kafka', 'producer inited', { topic });
     }
 
     await producer.init();
