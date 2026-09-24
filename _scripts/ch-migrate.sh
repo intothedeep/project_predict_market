@@ -9,7 +9,54 @@
 # `docker exec` + `clickhouse-client` (no local clickhouse client binary required), and
 # reads CLICKHOUSE_USER/PASSWORD/DB from the CONTAINER's own environment (already set
 # from root .env by infra/docker-compose.dev.yml) — no host-side .env parsing needed.
+#
+# U24: every line this script emits is a single JSON object, shaped to match
+# packages/common/src/logger.ts (level, ts, service, message, ...extra fields) so a
+# future collector sees one format. Deviations from logger.ts, stated explicitly:
+#   - ts is second precision (jq's `now|todate`), not logger.ts's millisecond
+#     `toISOString()` — bash/jq have no portable ms-precision clock across macOS/Linux.
+#   - errors carry a plain `error` string (clickhouse-client stderr) and `exit_code`,
+#     not logger.ts's {name,message,stack} Error shape — bash has no Error object.
+# level=="error" goes to stderr, everything else to stdout, matching logger.ts's
+# console.error/console.log split. All values are escaped via `jq --arg`/`--argjson`,
+# never string-interpolated into JSON text, so filenames/error text containing quotes
+# or newlines cannot produce invalid JSON.
 set -euo pipefail
+
+if ! command -v jq >/dev/null 2>&1; then
+  printf '{"level":"error","ts":"%s","service":"ch-migrate","message":"jq is required but not found in PATH"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+  exit 1
+fi
+
+# Emit one JSON log line. Usage: log_json <level> <message> [key value]...
+# A "key value" pair is passed as --argjson (numeric) if key starts with '#', else --arg (string).
+log_json() {
+  local level="$1" message="$2"
+  shift 2
+  local args=(--arg level "$level" --arg service "ch-migrate" --arg message "$message")
+  local filter='{level:$level, ts:(now|todate), service:$service, message:$message}'
+  while [ "$#" -gt 0 ]; do
+    local key="$1" val="$2"
+    shift 2
+    case "$key" in
+      \#*)
+        key="${key#\#}"
+        args+=(--argjson "$key" "$val")
+        ;;
+      *)
+        args+=(--arg "$key" "$val")
+        ;;
+    esac
+    filter="${filter} + {\"$key\": \$$key}"
+  done
+  local line
+  line="$(jq -cn "${args[@]}" "$filter")"
+  if [ "$level" = "error" ]; then
+    printf '%s\n' "$line" >&2
+  else
+    printf '%s\n' "$line"
+  fi
+}
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATIONS_DIR="$ROOT_DIR/packages/db/migrations/clickhouse"
@@ -18,7 +65,7 @@ META_DB="schema_migrations_db"
 
 # Confirm the container is up before doing anything else.
 if ! docker exec "$CONTAINER" true 2>/dev/null; then
-  echo "ch-migrate: container '$CONTAINER' is not running (try: make up)" >&2
+  log_json error "container '$CONTAINER' is not running (try: make up)" container "$CONTAINER"
   exit 1
 fi
 
@@ -47,7 +94,7 @@ migrations=("$MIGRATIONS_DIR"/*.sql)
 shopt -u nullglob
 
 if [ ${#migrations[@]} -eq 0 ]; then
-  echo "ch-migrate: no migration files found in $MIGRATIONS_DIR"
+  log_json info "no migration files found in $MIGRATIONS_DIR"
   exit 0
 fi
 
@@ -55,12 +102,17 @@ for file in "${migrations[@]}"; do
   name="$(basename "$file")"
   already_applied="$(echo "SELECT count() FROM schema_migrations FINAL WHERE name = '$name';" | ch_run "$META_DB")"
   if [ "$already_applied" != "0" ]; then
-    echo "ch-migrate: skip $name (already applied)"
+    log_json info "skip $name (already applied)" migration "$name"
     continue
   fi
-  echo "ch-migrate: applying $name"
-  ch_run_file "$CLICKHOUSE_DB" "$file"
+  log_json info "applying $name" migration "$name"
+  apply_rc=0
+  apply_err="$(ch_run_file "$CLICKHOUSE_DB" "$file" 2>&1)" || apply_rc=$?
+  if [ "$apply_rc" -ne 0 ]; then
+    log_json error "migration $name failed" migration "$name" error "$apply_err" "#exit_code" "$apply_rc"
+    exit "$apply_rc"
+  fi
   echo "INSERT INTO schema_migrations (name) VALUES ('$name');" | ch_run "$META_DB"
 done
 
-echo "ch-migrate: done"
+log_json info "done"
