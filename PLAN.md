@@ -111,7 +111,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: 헬퍼가 고정 arity로 전 성분을 요구하고 누락 시 **throw**(`rules/core.md` fail-fast). 5개 키 함수 출력이 재작성된 §4.4와 문자 단위 일치.
   - 수락: 체결 키에 복합 fallback이 계약으로 구현되어 있다(`trade_id` 부재 시의 대체 성분).
   - 수락(고의 파손 — 이 과제의 핵심): **함수마다 각각** 성분 하나를 빼고 호출해 throw 하는 것을 관찰한다(1회 대표 검증 불가, 5회).
-  - 수락: mock 재생성 후 6개 `.jsonl` 이 **바이트 단위로 불변**(mock이 계약의 참조 구현이므로).
+  - ~~수락: mock 재생성 후 6개 `.jsonl` 이 **바이트 단위로 불변**(mock이 계약의 참조 구현이므로).~~ <!-- SUPERSEDED-PENDING: U17②가 생성 시각을 Date.now()에 앵커링해 재생성 시 7개 파일이 바뀐다(predTickKey/cryptoTickKey가 timeMs를 실어 idempotency_key까지 변함). U7b 종결 시점에는 참이었고 U17이 소급 파기했다. U17②가 여전히 필요한지(U17①의 런타임 재앵커링이 절대 타임스탬프를 stale_ms와 무관하게 만든 이상) 아키텍트 판정 대기 — 조용히 고치지 말 것 -->
 - [x] **U8 — `apps/orderbook-writer` + `MessageSource` + `mockSource` + Redis Lua LWW 가드 (§4.2, §4.4, §4.5).** 선행: U5, U7, U7b
   - 범위: 와이어의 `PredOrderbook.seq` 는 **항상 채워진다** — venue가 시퀀스를 주지 않으면 재구성기가 `(venue, ticker)` 별 단조 카운터를 합성한다(합성 책임은 U6/U8). `BookEvent.seq: number | null` 계약은 그대로(어댑터는 venue의 사실을 보고한다). `time_ms` 로 대체하지 않는다 — 그것은 venue 이벤트 시각이라 같은 타임스탬프의 두 스냅샷이 여전히 충돌한다.
   - 수락: `MOCK_SOURCE=1` 로 기동 후 `redis-cli KEYS 'ob:*'` 에 `ob:kalshi:MOCK_*` 와 `ob:polymarket:MOCK_POLY_*` 가 모두 존재, `SCARD ob:index` >= 2, `TTL writer:heartbeat` <= 60.
@@ -125,9 +125,10 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - **판정 대기(U9 제목 문구)**: 제목의 "CH `FINAL` 읽기"는 §5.6("대시보드의 현재 오더북은 `FINAL` 경로를 타지 않는다")과 어긋나고, CH 기반 라우트·응답 형태가 어디에도 정의돼 있지 않으며 U9 수락 기준도 그것을 검증하지 않는다. 라우트를 정의하든지 문구가 스테일이든지 — 아키텍트 판정 대기(U9 자체는 Redis 경로로 종결).
 - [x] **U16 — U6 잔여 3건 해소 (아키텍트 판정 반영, `fef8ef3`).** Kalshi venue 전체를 수신 시각으로 이관하되 `RECEIPT_TIME_UNTIL_U12()` 라는 명시적 이름 뒤에 두고 호출부에 규칙 5와 U12를 인용 — 예외가 실수처럼 보이지 않고 드러나게. Binance/Coinbase 무수정(규칙 5 준수 유지). 앱 로컬 registry를 TTL 축출·화이트리스트와 함께 복원하고 `kalshi-core/src/registry/` 는 `x_` 로 내림. 공개 WS 풀에서 인증 헤더 제거(서명 코드는 유지, 되돌림 가설을 제거 지점에 기록 — U12용). `BookEvent.seq` 를 `venueSeq`(갭 감지 전용)와 `emitSeq`(키 동일성 전용)로 분리, `venueSeq` 가 null이면 `(venue, ticker)` 당 1회 경고. 선행: U6
   - **판정 대기**: 복원된 registry의 화이트리스트를 `['active','initialized','inactive']` → `['open']` 로 바꿨다. 구 리터럴은 드롭된 ClickHouse 뷰의 어휘이지 Kalshi REST의 어휘가 아니라, 그대로 쓰면 `getActiveTickers()` 가 영원히 `[]` 를 반환한다. 확인 대기.
-- [ ] **U10 — `apps/web` (Vite + React) 수집 대시보드 1화면.** venue 선택 + 오더북 + freshness + `feed` 배지. 선행: U9
-  - **블로커 (아키텍트 판정 대기 — 착수 금지)**: mock 재생 루프와 U8의 LWW 가드가 상쇄된다. `.jsonl` 을 처음부터 다시 재생하면 2회차 이후 쓰기가 전부 stale로 거부되어 **Redis가 더는 변하지 않는다** — MVP1 EXIT는 두 venue 오더북이 화면에서 *갱신*될 것을 요구하는데 1회차 이후 아무것도 갱신되지 않는다. U9의 SSE가 500ms마다 현재 상태를 재방송해 **데이터는 얼어 있는데 스트림만 살아 보이는** 상태를 만든다.
-  - **블로커 (판정 대기)**: `stale_ms` 가 약 366일로 나온다 — 계산은 맞고 mock 타임스탬프가 2025-09-22다. U10이 freshness를 렌더해야 하므로 착수 전 결정 필요.
+- [x] **U17 — mock 재생 루프 ↔ LWW 상쇄 해소 (U10 블로커 해제).** ① 재생기가 패스마다 `time_ms` 와 `seq` 를 함께 전진시킨다(낡은 타임스탬프를 그대로 도는 대신) — EXIT의 "두 venue 갱신"을 푼 것이 이것이다. ② mock 타임스탬프를 생성 시각에 앵커링. ③ U9의 500ms 무조건 SSE 재방송을 제거하고 변경 감지 복원(데이터는 얼었는데 스트림만 살아 보이던 상태 제거). 선행: U8, U9
+- [x] **U10 — `apps/web` (Vite + React) 수집 대시보드 1화면.** venue 선택 + 오더북 + freshness + `feed` 배지. 선행: U9
+  - **블로커 → 해소(U17①③, U19)**: mock 재생 루프와 U8의 LWW 가드가 상쇄된다. `.jsonl` 을 처음부터 다시 재생하면 2회차 이후 쓰기가 전부 stale로 거부되어 **Redis가 더는 변하지 않는다** — MVP1 EXIT는 두 venue 오더북이 화면에서 *갱신*될 것을 요구하는데 1회차 이후 아무것도 갱신되지 않는다. U9의 SSE가 500ms마다 현재 상태를 재방송해 **데이터는 얼어 있는데 스트림만 살아 보이는** 상태를 만든다.
+  - **블로커 → 해소(U17②, U18의 서버 측 임계)**: `stale_ms` 가 약 366일로 나왔다 — 계산은 맞고 mock 타임스탬프가 2025-09-22다. U10이 freshness를 렌더해야 하므로 착수 전 결정 필요.
   - 수락: 브라우저에서 **kalshi와 polymarket mock 오더북이 둘 다 갱신**된다(Kalshi 하드코딩 불가 증명).
   - 수락: 77자리 Polymarket CLOB token id 티커가 레이아웃을 깨지 않고 렌더된다.
   - 수락(고의 파손): writer 정지 → freshness 표시가 눈에 띄게 stale로 바뀐다. 재기동 시 복구.
@@ -136,11 +137,14 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 구현 메모(블로커 아님): 참조 프로젝트는 Next.js라 `next/font` 경로를 쓸 수 없다 — 토큰 CSS는 거의 그대로 이식되지만 모노 폰트 로딩은 Vite 방식으로 따로 배선해야 한다.
   - 블로커 아님: **Q6**(Vite vs Next.js) — Vite가 기본값이며 소유자 지시가 있을 때만 변경.
 
-- [ ] **U15 — 로깅 정리 (MVP1 마지막).** `packages/env/src/kalshi.ts`, `packages/common/src/kafka.ts` 에 캐리오버된 raw `console.log` 가 남아 있어 목표 7번(구조화 로깅)이 end-to-end로 성립하지 않는다. producer 3종(U6 이식분)도 함께 훑는다. 선행: U6, U10
+- [x] **U18 — 뷰 모델 단일화 + stale 임계 서버 이관 (`a3e2137`, 판정 `ff1d103`).** `OrderbookSnapshot` 을 `packages/schema/src/view/` 로 통합하고 **단방향 import 규칙**(와이어 계층은 `view/` 를 절대 import하지 않는다)을 세움. `kalshi-core` 의 동명 타입을 `KalshiWsOrderbook` 으로 개명. stale 임계를 클라이언트 하드코딩 상수에서 **서버 계산 공식** `max(3 × 관측 간격, 5000)` 으로 이관. 선행: U9, U10
+- [x] **U19 — 재생 타이밍 드리프트 수정 (`ea65823`).** `setTimeout` 재무장 방식이 누적 드리프트를 만들어 **정상 동작 중인 writer가 스스로 stale 임계로 밀려가던** 문제 — EXIT를 막고 있었다. 절대 타임라인 스케줄링으로 교체. U17과 별개 단위. 선행: U17
+- [x] **U15 — 로깅 정리 (MVP1 마지막).** `packages/env/src/kalshi.ts`, `packages/common/src/kafka.ts` 에 캐리오버된 raw `console.log` 가 남아 있어 목표 7번(구조화 로깅)이 end-to-end로 성립하지 않는다. producer 3종(U6 이식분)도 함께 훑는다. 선행: U6, U10
   - 수락: `apps/` + `packages/` 전역에서 `console.log|console.error` 검색 0건(logger 경유만).
   - 수락: 전 흐름 1회 기동 중 stdout의 모든 줄이 `jq .` 를 통과한다(파싱 실패 줄 0개).
+  - **판정 대기(게이트 범위, §10.1 `8c3fe7d`)**: `_scripts/ch-migrate.sh` 가 bash `echo` 2줄을 찍어 `jq` 를 통과하지 못한다. Vite 배너와 달리 이것은 **자사 코드이자 EXIT 시퀀스의 명시된 단계**다. 게이트가 시퀀스 전체 stdout을 덮는지 앱 stdout만 덮는지 아키텍트 판정 대기 — 덮는다면 developer 1줄 수정건.
 
-**MVP1 종료 판정**: 위 17개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
+**MVP1 종료 판정**: 위 20개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
 
 ---
 
