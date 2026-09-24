@@ -48,6 +48,9 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
 > 공통 전제 (U1 결과, 재발명 금지): `tsconfig.base.json` 은 **저장소 루트**에 있다 —
 > 하위 패키지는 `extends: "../../tsconfig.base.json"`. `packages/config-typescript` 를
 > 새로 만들지 않는다(§2의 5개 패키지 목록을 늘리는 것은 아키텍처 결정).
+> **과제 번호는 product-manager가 단독 발행한다.** 아키텍트는 설계를 쓰고 `PLAN.md` 를 읽지
+> 않으므로 무엇이 이미 쓰였는지 알 수 없다 — 새 단위는 **번호 없이 서술**로 넘기고 번호는
+> 여기서 붙인다(충돌 3회: U15→U7b, U19→U20 등).
 > `x_*` 는 **절대 `.gitignore` 에 넣지 않는다** — soft-delete 파일은 git에 보여야 한다
 > (`rules/docs.md` §0, 2026-09-20 사건).
 
@@ -111,7 +114,7 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
   - 수락: 헬퍼가 고정 arity로 전 성분을 요구하고 누락 시 **throw**(`rules/core.md` fail-fast). 5개 키 함수 출력이 재작성된 §4.4와 문자 단위 일치.
   - 수락: 체결 키에 복합 fallback이 계약으로 구현되어 있다(`trade_id` 부재 시의 대체 성분).
   - 수락(고의 파손 — 이 과제의 핵심): **함수마다 각각** 성분 하나를 빼고 호출해 throw 하는 것을 관찰한다(1회 대표 검증 불가, 5회).
-  - ~~수락: mock 재생성 후 6개 `.jsonl` 이 **바이트 단위로 불변**(mock이 계약의 참조 구현이므로).~~ <!-- SUPERSEDED-PENDING: U17②가 생성 시각을 Date.now()에 앵커링해 재생성 시 7개 파일이 바뀐다(predTickKey/cryptoTickKey가 timeMs를 실어 idempotency_key까지 변함). U7b 종결 시점에는 참이었고 U17이 소급 파기했다. U17②가 여전히 필요한지(U17①의 런타임 재앵커링이 절대 타임스탬프를 stale_ms와 무관하게 만든 이상) 아키텍트 판정 대기 — 조용히 고치지 말 것 -->
+  - 수락: mock 재생성 후 6개 `.jsonl` 이 **바이트 단위로 불변**(mock이 계약의 참조 구현이므로). **복원됨 — U17②가 철회되었다**(아키텍트 자기 판정 취소): ②는 mock 파일의 절대 `time_ms` 가 `stale_ms` 를 좌우한다는 전제 위에 있었는데 U17①의 런타임 재앵커링이 그 전제를 거짓으로 만들었다. 그래서 ②는 대가만 치렀다 — 재생성이 7개 파일을 흔들고, `predTickKey`/`cryptoTickKey` 가 `timeMs` 를 실으므로 `idempotency_key` 까지 움직여 **재seed한 행이 접히지 않았다(mock 세트가 §5의 중복 제거 보증을 스스로 위반)**. 확정 형태는 계층 분리: **파일 = 고정 상수 앵커**(재현 가능·키 안정), **재생 = 현재 시각으로 재앵커**(freshness 성립). 기준은 약화가 아니라 복원이며 U7c가 실물을 되돌린다.
 - [x] **U8 — `apps/orderbook-writer` + `MessageSource` + `mockSource` + Redis Lua LWW 가드 (§4.2, §4.4, §4.5).** 선행: U5, U7, U7b
   - 범위: 와이어의 `PredOrderbook.seq` 는 **항상 채워진다** — venue가 시퀀스를 주지 않으면 재구성기가 `(venue, ticker)` 별 단조 카운터를 합성한다(합성 책임은 U6/U8). `BookEvent.seq: number | null` 계약은 그대로(어댑터는 venue의 사실을 보고한다). `time_ms` 로 대체하지 않는다 — 그것은 venue 이벤트 시각이라 같은 타임스탬프의 두 스냅샷이 여전히 충돌한다.
   - 수락: `MOCK_SOURCE=1` 로 기동 후 `redis-cli KEYS 'ob:*'` 에 `ob:kalshi:MOCK_*` 와 `ob:polymarket:MOCK_POLY_*` 가 모두 존재, `SCARD ob:index` >= 2, `TTL writer:heartbeat` <= 60.
@@ -142,9 +145,26 @@ U12/U13/U14는 **MVP3 선행 게이트**이며 MVP3 개시 전에 반드시 닫�
 - [x] **U15 — 로깅 정리 (MVP1 마지막).** `packages/env/src/kalshi.ts`, `packages/common/src/kafka.ts` 에 캐리오버된 raw `console.log` 가 남아 있어 목표 7번(구조화 로깅)이 end-to-end로 성립하지 않는다. producer 3종(U6 이식분)도 함께 훑는다. 선행: U6, U10
   - 수락: `apps/` + `packages/` 전역에서 `console.log|console.error` 검색 0건(logger 경유만).
   - 수락: 전 흐름 1회 기동 중 stdout의 모든 줄이 `jq .` 를 통과한다(파싱 실패 줄 0개).
-  - **판정 대기(게이트 범위, §10.1 `8c3fe7d`)**: `_scripts/ch-migrate.sh` 가 bash `echo` 2줄을 찍어 `jq` 를 통과하지 못한다. Vite 배너와 달리 이것은 **자사 코드이자 EXIT 시퀀스의 명시된 단계**다. 게이트가 시퀀스 전체 stdout을 덮는지 앱 stdout만 덮는지 아키텍트 판정 대기 — 덮는다면 developer 1줄 수정건.
+  - **게이트 범위 확정 (`5647d7c`)**: **범위 = stdout이 텔레메트리로 소비되는 프로세스.** writer·api는 포함, Vite는 빌드 도구라 제외, `ch-migrate.sh`·seed·토픽 생성은 사람이 보는 콘솔 피드백인 1회성 셋업이라 제외. 자사/외부 여부는 판정에 들어가지 않는다. **제외는 유예이지 사면이 아니다** — 그 단계가 deploy/CI에서 **무인 실행되는 순간 범위에 들어온다**(출력이 피드백이 아니라 로그가 되는 시점).
 
 **MVP1 종료 판정**: 위 20개가 전부 `[x]` 이고 Phase 표의 MVP1 EXIT CRITERION 시연이 1회 통과.
+→ **2026-09-24 PASS** — 독립 reviewer가 시연을 직접 재현, 게이트 범위 확정(`5647d7c`)으로 마지막 미결까지 종결.
+
+### MVP1 후속 정리 (MVP2 개시 전)
+
+- [ ] **U20 — `packages/common` 배럴 분리.** `src/index.ts` 가 `kafka.ts` 를 재수출해 **모든** MVP1 프로세스가 import 시점에 librdkafka 바이너리를 매핑하고 `KAFKA_BOOTSTRAP` 을 로깅한다 — Kafka를 만질 일이 없는 `apps/api` 와 `apps/orderbook-writer` 까지. 기준: "Kafka 연결 0개"의 가장 강한 형태는 "connect를 부른 적 없다"가 아니라 **"연결 코드가 애초에 그 프로세스에 로드되지 않는다"** — **논증해야 성립하는 속성은 구조상 참인 속성보다 약하다.**
+  - 수락: api/writer 프로세스에서 librdkafka가 로드되지 않음을 관찰(모듈 목록 또는 `lsof`/`vmmap` 수준 확인), 기동 로그에 `KAFKA_BOOTSTRAP` 0건, producer 3종은 정상 빌드.
+- [ ] **U21 — `KAFKA_BOOTSTRAP ?? 'localhost:9092'` 기본값 제거.** 빈 `idempotency_key`, `ACTIVE_STATUSES` 불일치, 구 `toMs` 의 `Date.now()` fallback과 **같은 계열의 조용한 그럴듯한 대체**다. 선행: U20
+  - 수락(양쪽 모두): import는 여전히 성공하고, `connect()` 가 throw 한다. **import 시점 throw는 수정이 아니라 회귀다.**
+- [ ] **U22 — 튜플→객체 변환을 codec으로 이동.** `PROTO_DECODERS` 가 `[price, qty]` 튜플을 내는데 proto와 §3.5는 `{price, qty}` 다. 지금은 writer가 정확히 한 곳에서 되돌리고 있어, MVP3가 두 번째 소비자를 붙이는 순간 재발 지점이 된다.
+  - 수락: writer에서 변환 코드 0건, codec 출력이 §3.5 형태 그대로, 기존 흐름 1회 기동이 동일 결과.
+- [ ] **U23 — `x_*` 가 build/typecheck에서 실제로 제외되는지 검증.** soft-delete된 파일 2개가 이미 깨진 import를 들고 있다. 제외가 실제가 아니면 soft-delete 코드가 조용히 돌아와 빌드를 깬다. **확인할 것, 가정하지 말 것. 그리고 그 파일들 자체를 고치지 말 것.**
+  - 수락: `pnpm build`/`typecheck` 가 `x_*` 를 읽지 않음을 관찰(고의 파손: `x_` 파일에 구문 오류를 넣어도 빌드가 통과하면 제외가 실제, 통과하지 못하면 제외 설정을 고친다) 후 원복.
+- [ ] **U7c — mock을 고정 앵커로 재생성.** 선행: **U22 이후**(코덱 변경 전에 재생성하면 즉시 무효가 된다). 파일은 고정 상수 앵커, 재생은 런타임 재앵커 — U7b의 바이트 안정 기준을 **복원**한다.
+  - 수락: 두 번 재생성해도 6개 `.jsonl` 이 바이트 동일. 재seed 후 동일 이벤트가 `FINAL` 에서 접힌다(§5 보증 회복).
+  - 주의: 재seed는 **행 삭제가 아니라 로컬 dev ClickHouse 볼륨 재생성**으로 한다(hard-DELETE 금지).
+- [ ] **U24 — `ch-migrate.sh` 가 JSON 1줄을 찍게 한다. 게이트 블로커 아님(권고).** 무인 실행되는 날 범위에 들어오므로, 예외를 기억하는 것보다 `printf` 한 줄이 싸다.
+  - 수락: 실행 출력의 모든 줄이 `jq .` 통과.
 
 ---
 
