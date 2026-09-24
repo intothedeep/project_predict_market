@@ -17,6 +17,19 @@ dist/
 
 # Logs
 *.log
+/logs/
+
+# LaTeX build intermediates (book_market_predict_trading/ and any future book_*/).
+# main.pdf IS committed (rules/writing/latex.md §12, owner directive 2026-09-21) —
+# do not add *.pdf here.
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.xdv
 
 # Editor / OS
 .DS_Store
