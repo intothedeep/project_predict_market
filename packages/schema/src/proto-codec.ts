@@ -165,22 +165,25 @@ function decoded(msg: unknown): Record<string, unknown> {
     return { ...r, event_time_ms: ts };
 }
 
+// Decoded PriceLevel entries are @bufbuild message instances carrying a
+// non-contract `$typeName` reflection field. The package boundary shape is
+// plainly `{price, qty}` (00.architecture.mvp1.md §3.5), so re-plain-object
+// them here — this is the one place bids/asks cross out of @repo/schema.
+function plainLevels(levels: unknown): Array<{ price: string; qty: string }> {
+    if (!Array.isArray(levels)) return [];
+    return levels.map((level) => {
+        const l = level as { price: string; qty: string };
+        return { price: l.price, qty: l.qty };
+    });
+}
+
+/** Wrap a decoded PredOrderbook, normalizing bids/asks to plain {price, qty} objects. */
 function decodedOrderbook(msg: unknown): Record<string, unknown> {
     const record = decoded(msg);
-
-    const toLevels = (levels: unknown): Array<[string, string]> => {
-        if (!Array.isArray(levels)) return [];
-        return levels.flatMap((level) => {
-            const value = level as { price?: string; qty?: string };
-            if (value.price == null || value.qty == null) return [];
-            return [[value.price, value.qty]];
-        });
-    };
-
     return {
         ...record,
-        bids: toLevels(record.bids),
-        asks: toLevels(record.asks),
+        bids: plainLevels(record.bids),
+        asks: plainLevels(record.asks),
     };
 }
 

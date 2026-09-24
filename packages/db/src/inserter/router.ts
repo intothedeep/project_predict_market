@@ -24,7 +24,8 @@
  * proto-codec.ts's toJsonBytes/fromJsonBytes, not a router env switch.
  */
 
-import { publishJsonWire, log } from '@repo/common';
+import { log } from '@repo/common';
+import { publishJsonWire } from '@repo/common/kafka';
 import { PROTO_ENCODERS } from '@repo/schema';
 
 // Returns a promise that resolves once the message has been enqueued for

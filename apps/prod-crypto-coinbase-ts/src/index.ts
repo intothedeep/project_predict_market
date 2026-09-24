@@ -4,7 +4,8 @@
  * Starts Coinbase WebSocket stream, publishes trades and ticker updates to Kafka.
  */
 
-import { initProducer, log, registerShutdown, startHeartbeatFile } from '@repo/common';
+import { log, registerShutdown, startHeartbeatFile } from '@repo/common';
+import { initProducer, disconnectProducer } from '@repo/common/kafka';
 import '@repo/env';
 import { connectCoinbase } from './ws/connect.ws';
 import { PRODUCTS } from './config';
@@ -23,9 +24,10 @@ async function main() {
 
     registerShutdown({
         name: 'crypto-coinbase',
-        stop: () => {
+        stop: async () => {
             handle.stop();
             heartbeat.stop();
+            await disconnectProducer();
         },
     });
 }

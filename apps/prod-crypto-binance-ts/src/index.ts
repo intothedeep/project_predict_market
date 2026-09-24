@@ -9,7 +9,8 @@
  * Or:  pnpm --filter @repo/prod-crypto-binance-ts produce
  */
 
-import { initProducer, log, registerShutdown, startHeartbeatFile } from '@repo/common';
+import { log, registerShutdown, startHeartbeatFile } from '@repo/common';
+import { initProducer, disconnectProducer } from '@repo/common/kafka';
 import '@repo/env';
 import { connectBinance } from './ws/connect.ws';
 import { COINS } from './config';
@@ -29,9 +30,10 @@ async function main() {
 
     registerShutdown({
         name: 'binance',
-        stop: () => {
+        stop: async () => {
             handle.stop();
             heartbeat.stop();
+            await disconnectProducer();
         },
     });
 }

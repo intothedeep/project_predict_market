@@ -17,12 +17,15 @@
  * but the wire contract (§4.0) guarantees the producer always populates it
  * for this topic — the writer treats a missing seq as a contract violation
  * (see redis-writer.ts), not something to synthesize itself.
+ *
+ * bids/asks are `{price, qty}` objects — the package-boundary shape (§3.5).
+ * PROTO_DECODERS returns proto's PriceLevel[] as-is; no tuple conversion.
  */
 export interface DecodedOrderbook {
     timeMs: bigint;
     ticker: string;
-    bids: Array<[string, string]>;
-    asks: Array<[string, string]>;
+    bids: Array<{ price: string; qty: string }>;
+    asks: Array<{ price: string; qty: string }>;
     seq: bigint | undefined;
     venue: string;
     idempotencyKey: string;

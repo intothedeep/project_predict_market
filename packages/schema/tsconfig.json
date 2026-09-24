@@ -9,6 +9,7 @@
         "node_modules",
         "dist",
         "src/x_table-configs",
-        "src/x_generators"
+        "src/x_generators",
+        "src/x_utils.ts"
     ]
 }

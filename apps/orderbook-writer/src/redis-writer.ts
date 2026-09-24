@@ -42,16 +42,6 @@ return 1
 
 export type ApplyResult = 'applied' | 'rejected';
 
-// §4.4 line 734: bids/asks go into the hash in "OrderbookSnapshot과 동일
-// 형태" (§3.5) — keyed {price, qty} objects, not tuples. PROTO_DECODERS'
-// decodedOrderbook() reshapes proto PriceLevel[] into [price, qty] tuples
-// for its own purposes; the writer reshapes back before storing.
-function toPriceLevelObjects(
-    levels: Array<[string, string]>
-): Array<{ price: string; qty: string }> {
-    return levels.map(([price, qty]) => ({ price, qty }));
-}
-
 /**
  * Wire contract (§4.0): PredOrderbook.seq is always populated by the
  * producer (U6 synthesizes it when the venue gives none). The writer trusts
@@ -76,8 +66,8 @@ export async function applySnapshot(
         ['ticker', snapshot.ticker],
         ['time_ms', snapshot.timeMs.toString()],
         ['seq', snapshot.seq.toString()],
-        ['bids', JSON.stringify(toPriceLevelObjects(snapshot.bids))],
-        ['asks', JSON.stringify(toPriceLevelObjects(snapshot.asks))],
+        ['bids', JSON.stringify(snapshot.bids)],
+        ['asks', JSON.stringify(snapshot.asks)],
     ];
 
     const result = await client.eval(LWW_GUARD_SCRIPT, {

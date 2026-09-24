@@ -27,9 +27,6 @@ import { envInt } from './utils';
 const { Producer } = pkg;
 type Producer = InstanceType<typeof Producer>;
 
-const BOOTSTRAP = KAFKA_BOOTSTRAP ?? 'localhost:9092';
-log('info', 'kafka', `KAFKA_BOOTSTRAP: ${BOOTSTRAP}`);
-
 const DRY_RUN = ENV_DRY_RUN;
 const BATCH_SIZE = envInt('KAFKA_BATCH_SIZE', 100);
 const FLUSH_MS = envInt('KAFKA_BATCH_FLUSH_MS', 2000);
@@ -81,6 +78,20 @@ class BufferedKafkaProducer {
             );
             return;
         }
+
+        // Fail loudly where the value is needed, in the process that needs
+        // it — not at module load (00.architecture.mvp1.md §7.1.2, U19). A
+        // silent `?? 'localhost:9092'` default here is the same
+        // plausible-substitution shape as the empty idempotency_key and the
+        // ACTIVE_STATUSES mismatch this document has flagged before.
+        if (!KAFKA_BOOTSTRAP) {
+            throw new Error(
+                `KAFKA_BOOTSTRAP is not set — cannot connect producer for topic ${this.topic}`
+            );
+        }
+        const BOOTSTRAP = KAFKA_BOOTSTRAP;
+
+        log('info', 'kafka', `KAFKA_BOOTSTRAP: ${BOOTSTRAP}`);
 
         const producer = new Producer({
             'bootstrap.servers': BOOTSTRAP,

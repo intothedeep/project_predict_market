@@ -1,4 +1,5 @@
-import { log, initProducer, registerShutdown, startHeartbeatFile } from '@repo/common';
+import { log, registerShutdown, startHeartbeatFile } from '@repo/common';
+import { initProducer, disconnectProducer } from '@repo/common/kafka';
 import {
     KALSHI_WS_URL,
     KALSHI_WS_MARKET_CHUNK_SIZE,
@@ -156,11 +157,12 @@ async function start(): Promise<void> {
     // exist, so disconnectProducer resolves instantly.
     registerShutdown({
         name: LOG_PREFIX,
-        stop: () => {
+        stop: async () => {
             registryRefresh.stop();
             publicPool?.stop();
             obHandler.stop();
             heartbeat.stop();
+            await disconnectProducer();
         },
     });
 }

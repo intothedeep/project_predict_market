@@ -1,12 +1,16 @@
-import { disconnectProducer } from './kafka.js';
 import { log } from './logger';
 
 /**
- * Registers a single SIGINT/SIGTERM handler that stops app work, drains the
- * Kafka producer, then exits. A watchdog forces exit(1) after timeoutMs so a
- * hung stop()/disconnect never outlives the k8s termination grace period
- * (default 20 s < terminationGracePeriodSeconds 30). A second signal forces
- * immediate exit(1).
+ * Registers a single SIGINT/SIGTERM handler that runs `stop()`, then exits.
+ * A watchdog forces exit(1) after timeoutMs so a hung stop() never outlives
+ * the k8s termination grace period (default 20 s < terminationGracePeriodSeconds
+ * 30). A second signal forces immediate exit(1).
+ *
+ * Kafka producer drain is NOT done here (00.architecture.mvp1.md §7.1.2,
+ * U19) — this module must stay Kafka-free so non-producer processes
+ * (apps/api, apps/orderbook-writer) importing @repo/common don't map the
+ * librdkafka native binary. Producers call @repo/common/kafka's
+ * disconnectProducer() themselves inside their own `stop`.
  */
 export function registerShutdown(opts: {
     name: string;
@@ -34,13 +38,6 @@ export function registerShutdown(opts: {
             await stop?.();
         } catch (err) {
             log('warn', name, 'stop() threw during shutdown', { err });
-        }
-        try {
-            await disconnectProducer();
-        } catch (err) {
-            log('warn', name, 'disconnectProducer failed during shutdown', {
-                err,
-            });
         }
         process.exit(0);
     };
