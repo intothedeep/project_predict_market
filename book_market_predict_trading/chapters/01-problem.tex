@@ -1,13 +1,195 @@
 \chapter{예측시장 데이터 파이프라인이 푸는 문제}
 \label{ch:problem}
 
-이 장은 Kalshi와 Polymarket 같은 예측시장(prediction market), 그리고 Binance·Coinbase
-같은 현물 거래소(spot exchange)에서 BTC 관련 데이터를 실시간으로 모으는 일이 왜
-단순한 "API 호출 반복"이 아니라 별도의 설계를 요구하는 문제인지를 다룬다.
-피드가 끊기고, 메시지가 중복되고, 순서가 뒤집히는 조건에서도 하나의 오더북(orderbook)
-상태를 일관되게 유지해야 한다는 요구가 이후 모든 장(\Cref{ch:architecture}부터
-\Cref{ch:delivery}까지)의 설계 결정을 낳는다.
+\paragraph{In brief.}
+\begin{description}
+  \item[Why] Kalshi, Polymarket 같은 예측시장(prediction market)과 Binance, Coinbase 같은
+    현물 거래소(spot exchange)에서 BTC 관련 데이터를 실시간으로 모으는 일은 API를 반복
+    호출하는 문제가 아니다. 피드가 끊기고, 메시지가 중복되고, 순서가 뒤집히는 조건에서도
+    하나의 오더북(orderbook, 호가창) 상태를 일관되게 유지해야 한다는 요구가 있다.
+  \item[When] 이 장의 논의는 producer(거래소 WS를 구독해 데이터를 내보내는 프로세스)가
+    켜지는 순간부터 대시보드에 값이 표시되는 순간까지, 파이프라인 전 구간에 적용된다.
+  \item[Where] Kalshi·Polymarket(예측시장) 및 Binance·Coinbase(현물)의 BTC 관련 데이터에
+    적용된다. 이 문서가 다루는 파이프라인은 BTC 한 종목으로 범위를 좁혀 시작한다(\Cref{sec:problem-btc-only}).
+  \item[How] "왜 어려운가"를 먼저 확인하고, 그 답이 \Cref{ch:architecture}(토폴로지),
+    \Cref{ch:contract}(스키마), \Cref{ch:delivery}(전달 보장)의 설계를 낳는 순서로
+    이 책 전체를 읽는다.
+\end{description}
 
-\todo{§1--§2의 목표 나열과 §3.3 BTC 한정 근거를 바탕으로, "왜 이 파이프라인이 필요한가"를
-독자가 처음 만나는 문제로 풀어 쓴다. book.md 원칙 8(문제 → 처방)을 따라 이 장 전체가
-2장 이후의 각 결정을 예고하는 방식으로 작성.}
+\section{예측시장이란 무엇인가: Kalshi와 Polymarket은 같은 제품군이다}
+\label{sec:problem-prediction-market}
+
+\paragraph{무슨 문제가 있었나.} Kalshi와 Polymarket은 겉으로 보면 전혀 다른 물건처럼
+보인다. Kalshi는 미국 상품선물거래위원회 관할 아래 인증을 요구하는 거래소이고,
+Polymarket은 누구나 인증 없이 접속할 수 있는 공개 채널을 쓴다(\Cref{sec:problem-two-venues}).
+가격이 매겨지는 방식도, 마켓을 식별하는 문자열의 생김새도 다르다. 이 차이만 보고 두
+거래소를 아예 별개의 데이터 계열로 취급하면, 나중에 세 번째 예측시장이 들어올 때마다
+스키마를 통째로 새로 설계해야 한다.
+
+\paragraph{그래서 무엇을 바꿨나.} 이 시스템은 Kalshi와 Polymarket을 \term{같은 제품군}으로
+본다. 둘 다 \term{이벤트 계약(event contract)}이다. "BTC가 특정 시각에 특정 가격을 넘는가"
+같은 질문에 대해 0에서 1 사이의 확률처럼 가격이 매겨지고, 사건이 실제로 일어나거나
+일어나지 않으면 그 계약은 1 또는 0으로 정산(settle)된다.
+% src: 00.architecture.mvp1.md §3.1 (venue 차원 214-216행)
+
+\paragraph{왜 그 관점이 문제를 푸는가.} 제품군이 같다는 것을 계약(스키마) 수준에서
+인정하면, 두 거래소는 \term{같은 테이블, 같은 필드 집합}을 공유하고 거래소를 구분하는
+값 하나(\texttt{venue})만 갈라지면 된다. 반대로 제품군이 다르다고 보면 거래소마다
+테이블을 하나씩 새로 파야 하고, 그 테이블들은 시간이 지나면서 조금씩 다른 모양으로
+벌어진다. 이 책에서 \term{계약}이라는 말이 반복해서 등장하는데(\Cref{ch:contract}),
+그 계약의 첫 번째 근거가 바로 이 관점이다.
+
+\begin{example}[가족과 축]
+\label{ex:problem-family-axis}
+이 파이프라인은 데이터를 두 \term{가족(family)}으로 나눈다. \texttt{pred\_*}(예측시장:
+Kalshi, Polymarket)와 \texttt{crypto\_*}(현물: Binance, Coinbase)다. \texttt{venue}는
+가족을 나누는 값이 아니라, \term{한 가족 안에서} 어느 거래소인지를 가리키는 축이다.
+예를 들어 \texttt{pred\_orderbook\_ws} 테이블 하나에 \texttt{venue=kalshi} 행과
+\texttt{venue=polymarket} 행이 함께 담긴다. 가족을 가르는 것은 테이블 이름이고,
+거래소를 가르는 것은 \texttt{venue} 컬럼이다.
+% src: 00.architecture.mvp1.md §3.1 (214-216행)
+\end{example}
+
+\section{두 거래소, 다른 배선}
+\label{sec:problem-two-venues}
+
+\paragraph{In brief.}
+\begin{description}
+  \item[Why] "같은 제품군"이라는 말이 "코드가 하나로 통합된다"는 뜻은 아니다. 배선
+    (연결·인증·구독 단위)은 거래소마다 다르고, 그 차이를 흡수하는 자리가 따로 있어야 한다.
+  \item[When] producer가 거래소 WS(웹소켓)에 연결하는 순간부터 원본 메시지를 파싱해
+    내보내는 순간까지 적용된다.
+  \item[Where] Kalshi는 이미 붙어 있는 거래소이고, Polymarket은 이 시스템에서 스키마
+    자리만 마련해 둔 상태다(\Cref{sec:problem-btc-only}).
+  \item[How] 마켓 식별자, 인증, 구독 단위, 하트비트, 메시지 모양 네 가지 축으로 비교한다.
+\end{description}
+
+Kalshi와 Polymarket이 계약 수준에서 같은 가족이라는 사실은
+\Cref{sec:problem-prediction-market}에서 확인했다. 이 절은 그 반대편, 즉 \term{두
+거래소가 실제로 얼마나 다르게 말을 거는지}를 짚는다. 이 차이를 아는 것이 중요한
+이유는, 이 차이가 "재구성기(오더북을 다시 조립하는 로직)는 거래소 이름을 몰라야
+한다"는 설계 원칙을 낳기 때문이다(\Cref{ch:architecture}).
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabularx}{\linewidth}{@{}lXX@{}}
+    \toprule
+    축 & Kalshi & Polymarket \\
+    \midrule
+    마켓 식별자 & 시리즈 형태 문자열(예: \texttt{KXBTCD-26SEP22-B112000}) &
+      CLOB(Central Limit Order Book) token id. 수십 자리 10진수 문자열 \\
+    접속 & 인증이 필요한 WS 채널 & 공개·무인증 마켓 채널
+      (\url{wss://ws-subscriptions-clob.polymarket.com/ws/market}) \\
+    구독 단위 & 시리즈/티커 채널 구독 & \texttt{clobTokenIds} 목록으로 구독 \\
+    하트비트 & (구현별) & 서버가 5초마다 ping, 클라이언트는 10초 내 pong 필요 \\
+    오더북 메시지 & \texttt{orderbook\_snapshot} / \texttt{orderbook\_delta} 채널 &
+      \texttt{Orderbook}(스냅샷) / \texttt{PriceChange}(델타) / \texttt{LastTrade}(체결) 이벤트 \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Kalshi와 Polymarket의 배선 차이. 계약(스키마)은 같지만 여기는 다르다.}
+  \label{tab:problem-venue-wiring}
+\end{table}
+% src: 00.architecture.mvp1.md §3.1 (242-246행), §4.0 (721-758행)
+
+\paragraph{티커 모양이 왜 중요한가.} Kalshi의 티커는 사람이 읽을 수 있는 시리즈 문자열이고,
+Polymarket의 티커는 숫자로만 이루어진 매우 긴 문자열이다. 이 차이는 미감의 문제가
+아니다. 두 거래소의 티커가 \term{우연히 같은 문자열}이 되는 일은 실무적으로 없다고
+봐도 되지만, 스키마가 그 가능성을 아예 차단하려면 거래소를 구분하는 값이 별도로
+필요하다. \Cref{ch:contract}와 \Cref{ch:delivery}가 이 문제를 다루는 방식(정렬 키
+선두에 \texttt{venue}를 두는 것)이 여기서 예고된다.
+% src: 00.architecture.mvp1.md §3.4 (291-307행)
+
+\paragraph{시퀀스 번호가 왜 다르게 취급되는가.} Kalshi는 오더북 갱신마다 단조 증가하는
+시퀀스 번호(\texttt{seq})를 준다고 가정할 수 있지만, Polymarket이 같은 방식의 시퀀스를
+준다는 보장은 없다. 이 시스템은 그 불확실성을 타입으로 드러낸다. 거래소가 준 원본
+시퀀스는 \term{없을 수 있는 값}(\texttt{null} 허용)으로 두고, 재구성기가 필요하면
+별도의 값을 합성한다. "거래소가 보장하는 것"과 "우리가 만들어 채우는 것"을 한 필드에
+섞지 않는 이유가 여기 있다.
+% src: 00.architecture.mvp1.md §4.0 (757-758행)
+
+\section{왜 수집이 어려운가: 델타, 재생 불가, 시계 불일치}
+\label{sec:problem-hard}
+
+\paragraph{무슨 문제가 있었나(1): 오더북은 델타로 온다.} 거래소는 "지금 오더북 전체가
+이렇습니다"라는 스냅샷(snapshot)을 매번 보내지 않는다. 대신 "이 가격대의 물량이
+이렇게 바뀌었습니다"라는 \term{델타(delta, 변화분)}를 흘려보낸다. 오더북의 실제 상태를
+알려면 최초 스냅샷 위에 그 뒤의 델타를 순서대로 계속 적용해야 한다. 델타 하나를 놓치면,
+그 이후로 쌓은 상태 전체가 거래소의 실제 상태와 어긋난다.
+
+\paragraph{그래서 무엇을 바꿨나.} 이 시스템은 델타를 받아 적용하는 \term{재구성
+(reconstruction)} 책임을 WS 연결을 쥔 producer 프로세스 안에 둔다. 시퀀스 갭(간격)이
+감지되면 그 프로세스가 직접 재연결해 새 스냅샷을 받는다.
+% src: 00.architecture.mvp1.md §4.1 (826-831행)
+
+\paragraph{왜 그 위치가 문제를 푸는가.} 갭을 감지하는 것과 갭을 복구하는 것은 다른
+일이다. 복구하려면 "다시 스냅샷을 달라"고 말할 수 있는 권한, 즉 WS 소켓 자체가 필요하다.
+재구성 로직을 producer 밖(예: 별도 컨슈머)으로 빼면, 갭은 감지할 수 있어도 복구할
+방법이 없는 반쪽짜리 설계가 된다. 그래서 재구성은 소켓을 쥔 쪽에 남아야 한다.
+이 결론은 \Cref{ch:architecture}에서 "Redis 오더북 라이터는 재구성하지 않는다"는
+설계로 다시 등장한다.
+% src: 00.architecture.mvp1.md §4.1 (826-831행)
+
+\paragraph{무슨 문제가 있었나(2): 피드에는 재생이 없다.} 거래소 WS는 "5초 전에 보낸
+그 메시지를 다시 보내 달라"는 요청을 받아 주지 않는다. \term{재생(replay)이 없다}는
+말은 이 뜻이다. 한 번 놓친 메시지는 그 순간의 호가·체결 정보를 영원히 잃는 것과
+같다. 이 사실 하나가 \Cref{ch:delivery}에서 다루는 "메시지가 사라지는 구간을 정확히
+알아야 한다"는 목표의 출발점이다.
+% src: 00.architecture.mvp1.md §5.3-1 (본문 §5.3 인용, delivery 장과 공유하는 근거)
+
+\paragraph{무슨 문제가 있었나(3): 거래소마다 시계가 다르다.} "이 이벤트가 언제
+일어났는가"라는 질문에 모든 거래소가 같은 방식으로 답하지 않는다. Binance와
+Coinbase는 메시지 안에 거래소가 매긴 이벤트 시각을 담아 보낸다. 반면 Kalshi의 틱과
+오더북 메시지에는 이 시스템이 신뢰할 수 있는 이벤트 시각 필드가 없다고 알려져
+있어서, 이 시스템은 Kalshi의 해당 경로에 한해 \term{메시지를 받은 시각(수신 시각)}을
+대신 쓴다. 이것은 임시방편이 아니라 \term{기록된 예외}로 남겨 두고, 나중에 이벤트
+시각 필드가 확인되면 그쪽으로 옮기기로 정해 둔 상태다.
+% src: 00.architecture.mvp1.md §3.7 규칙 5의 예외 (674-706행)
+
+\begin{callout}[왜 "시계가 다르다"는 사실을 숨기면 안 되는가]
+한 거래소 안에서 어떤 메시지는 거래소 시각을, 어떤 메시지는 수신 시각을 섞어 쓰면,
+나중에 이력을 봐도 \term{어느 행이 어느 시계를 따르는지} 구분할 방법이 없다. 그래서
+이 시스템의 규칙은 "정확한 시각을 항상 써라"가 아니라 "\term{한 거래소 안에서는 한
+시계만 써라, 그리고 어느 시계를 쓰는지 기록해 두라}"이다. 정확도보다 일관성과
+투명성을 우선한 것이다.
+% src: 00.architecture.mvp1.md §3.7 규칙 5 (645-673행)
+\end{callout}
+
+\section{BTC 한 종목으로 시작하는 이유}
+\label{sec:problem-btc-only}
+
+\paragraph{무슨 문제가 있었나.} Kalshi 한 거래소만 해도 취급하는 시리즈가 암호화폐,
+날씨, 정치 등으로 넓게 퍼져 있고, 현물 거래소도 여러 심볼을 동시에 스트리밍할 수
+있다. 처음부터 전 종목을 받으면, 파이프라인이 제대로 동작하는지 확인하기도 전에
+메시지량과 실패 지점의 수가 함께 불어난다.
+
+\paragraph{그래서 무엇을 바꿨나.} 이 시스템은 BTC 한 종목으로 구독 범위를 좁힌다.
+Binance는 \texttt{BTCUSDT}, Coinbase는 \texttt{BTC-USD}, Kalshi는 BTC 관련 시리즈만
+남긴다.
+% src: 00.architecture.mvp1.md §3.3 (267-275행)
+
+\paragraph{왜 그 변경이 문제를 푸는가.} 이 제한은 \term{스키마가 아니라 구독 설정에}
+건다. 즉 테이블이나 proto 메시지에 "BTC만 허용"이라는 조건이 박혀 있는 것이 아니라,
+producer가 거래소에 무엇을 구독할지 정하는 상수 하나가 좁혀져 있을 뿐이다. 그래서
+다른 종목을 추가하는 일은 스키마 변경이 아니라 설정 변경이 되고, 이는 나중에 env
+값 하나로 뺄 수 있는 1줄짜리 과제로 남는다.
+% src: 00.architecture.mvp1.md §3.3 (275행)
+
+\section{시스템의 목적: "적어도 한 번"에서 "정확히 한 번"으로}
+\label{sec:problem-goal}
+
+앞의 세 절이 확인한 어려움. 델타로만 오는 오더북, 재생이 없는 피드, 거래소마다
+다른 시계. 은 전부 "메시지 하나를 잃어버리거나 두 번 받을 수 있다"는 사실로
+수렴한다. 이 시스템이 스스로에게 거는 목표는 그 위험을 완전히 없애는 것이 아니다.
+완전한 제거는 스트리밍 시스템에서 현실적인 목표가 아니다. 대신 이 목표를
+\term{at-least-once(적어도 한 번 전달)}에서 \term{effectively-exactly-once(사실상
+정확히 한 번)}로 가는 길로 잡는다. 배달은 유실이 없거나(또는 유실이 어디서
+나는지 정확히 알려져 있고), 중복은 저장 단계에서 안전하게 접힌다는 뜻이다. 이
+목표가 정확히 무엇을 뜻하는지, 그리고 이 파이프라인의 어느 구간이 그 목표를
+실제로 만족하는지는 \Cref{ch:delivery}가 전담해서 다룬다. 지금 독자가 들고 가야
+할 것은 한 문장이다. \term{"메시지가 사라지는 구간이 있다면, 그 구간이 어디인지는
+반드시 알 수 있어야 한다."}
+% src: 00.architecture.mvp1.md §5.1 (delivery 장의 출발점과 공유)
+
+이어지는 \Cref{ch:architecture}는 "그 구간을 어디에 둘 것인가"라는 질문에서 출발해,
+Kafka와 Redis와 ClickHouse가 왜 지금의 역할로 나뉘어 있는지를 다룬다.

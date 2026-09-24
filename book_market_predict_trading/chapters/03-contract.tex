@@ -1,10 +1,325 @@
 \chapter{스키마를 계약으로 두는 설계}
 \label{ch:contract}
 
-이 장은 proto 메시지 → codec → ClickHouse DDL로 이어지는 3단계를 "같은 계약을
-다른 형태로 반복하는 사슬"로 보는 관점을 다룬다. \texttt{venue} 필드 하나를 추가하는
-결정이 왜 병렬 테이블이나 별도 마이그레이션 없이 끝나는지가 핵심이며, 이 계약의
-견고함이 \Cref{ch:delivery}에서 다루는 정렬 키(sort key) 기반 중복 제거의 전제가 된다.
+\paragraph{In brief.}
+\begin{description}
+  \item[Why] 메시지의 모양을 정의하는 곳이 여러 곳으로 흩어지면, 그중 하나만 고치고
+    나머지를 잊는 실수가 언젠가 반드시 일어난다. 이 장은 그 실수를 구조적으로 막는
+    설계, 즉 하나의 계약을 여러 층이 그대로 반복하는 사슬을 다룬다.
+  \item[When] proto 메시지를 정의하는 순간부터, 그 값이 Kafka를 거쳐 ClickHouse
+    테이블에 행으로 앉는 순간까지 전 구간에 적용된다.
+  \item[Where] 예측시장(\texttt{pred\_*})과 현물(\texttt{crypto\_*}) 양쪽 스키마
+    모두 같은 원칙을 따른다.
+  \item[How] proto가 형태(shape)의 단일 원본이고, codec이 그 형태를 바이트로 옮기며,
+    ClickHouse DDL이 그 형태를 저장 형태로 받는다. 세 층의 순서를 지키면 계약은
+    하나로 유지된다.
+\end{description}
 
-\todo{§3(스키마 3단계, venue 차원 도입 근거, 정렬 키에 venue를 선두에 두는 이유)를
-바탕으로 "계약이 하나여야 하는 이유"를 설명한다.}
+\section{계약이 세 층인 이유}
+\label{sec:contract-chain}
+
+\paragraph{무슨 문제가 있었나.} 데이터의 "모양"을 정의하는 자리가 여럿이면, 그 정의는
+반드시 서로 어긋난다. 이 저장소가 물려받은 구 설계는 계약을 네 단계로 나눠 두고
+있었는데, 그중 두 층(\texttt{table-configs/}, \texttt{generators/})은 예전 저장소
+(TimescaleDB 시절)의 유물이었다. \texttt{hypertable}, \texttt{TIMESTAMPTZ},
+\texttt{NUMERIC} 같은 개념이 현재 쓰는 ClickHouse DDL(컬럼이 전부 \texttt{String})과
+이미 맞지 않았다. 즉 "정의하는 자리"라고 적혀 있었지만 실제로는 아무도 참조하지
+않는 죽은 문서였다.
+% src: 00.architecture.mvp1.md §3 (119-121행)
+
+\paragraph{그래서 무엇을 바꿨나.} 계약 체인을 세 층으로 정리한다.
+
+\begin{enumerate}
+  \item \texttt{packages/schema/src/proto/*.proto}. 형태의 단일 원본(SSOT, single
+    source of truth)
+  \item \texttt{packages/schema/src/proto-codec.ts}. 인코딩/디코딩. 와이어 포맷은
+    JSON(\Cref{sec:contract-wire})
+  \item \texttt{packages/db/migrations/clickhouse/*.sql}. 저장 형태
+\end{enumerate}
+
+변경은 반드시 이 순서로 흐른다. 타입 정의를 다른 곳에 복제하지 않는다.
+% src: 00.architecture.mvp1.md §3 (123-129행)
+
+\paragraph{왜 그 순서가 문제를 푸는가.} 세 층이 \term{같은 계약을 다른 표현으로
+반복}하기 때문에, 필드 하나를 추가하는 변경은 세 층 모두에서 같은 이름으로 나타난다.
+1번 층이 \term{형태}를 정하고, 2번 층은 그 형태를 손대지 않고 \term{바이트로 옮기는
+방법}만 바꾸며, 3번 층은 같은 형태를 \term{저장할 컬럼}으로 받는다. 이 순서를
+지키면, "제안된 변경이 계약과 맞는가"라는 질문에 항상 하나의 답만 존재한다. proto가
+그 형태를 이미 허용하는지 보면 된다. 계약이 여럿이었다면 이 질문에 층마다 다른
+답이 나올 수 있었다.
+
+이 장 전체를 관통하는 예제가 \texttt{venue} 필드 하나를 추가한 변경이다
+(\Cref{sec:contract-venue}). 이 변경이 세 층을 순서대로 통과하고 나서, 병렬 테이블도
+별도 마이그레이션도 없이 끝났다는 사실이 "계약이 하나여야 하는 이유"를 가장 구체적으로
+보여 준다.
+
+\section{와이어 포맷이 JSON인 이유, 그리고 이것이 잠정 결정인 이유}
+\label{sec:contract-wire}
+
+\paragraph{무슨 문제가 있었나.} proto 바이너리는 스키마 없이는 한 글자도 읽을 수
+없다. 콘솔 컨슈머로 토픽을 열어 페이로드를 눈으로 확인하려 해도, 바이너리 앞에서는
+아무것도 보이지 않는다. 파이프라인이 아직 검증되지 않은 이 단계에서, "지금 토픽에
+무엇이 쌓이고 있는지" 눈으로 확인하지 못하는 것은 디버깅을 막는 직접적인 장벽이다.
+
+\paragraph{그래서 무엇을 바꿨나.} MVP1부터, 그리고 데이터 파이프라인이 잘 도는 것이
+확인될 때까지 Kafka 와이어 포맷은 JSON이다. proto 메시지의 \term{형태}는 그대로
+proto가 원본으로 남고, 바뀌는 것은 그 형태를 바이트로 옮기는 \term{방법}뿐이다.
+% src: 00.architecture.mvp1.md §3.0 (133-151행)
+
+\paragraph{왜 그 변경이 문제를 푸는가.} \texttt{@bufbuild/protobuf} 라이브러리가
+\texttt{toJson}/\texttt{fromJson}을 제공하므로, 코덱 경계에서 바뀌는 것은 방향당
+함수 하나뿐이다. \term{스키마 마이그레이션은 일어나지 않는다.} 되돌릴 때도 마찬가지다. 복귀 경로는 \texttt{toJsonBytes}/\texttt{fromJsonBytes} 안에서 \texttt{toJson}을
+\texttt{toBinary}로 바꾸는 코드 한 줄이지, 환경변수로 두 포맷을 동시에 지원하는
+런타임 스위치가 아니다. 스위치를 남기면 "JSON 바이트에 \texttt{encoding: 'proto'}
+헤더만 붙는" 거짓 상태가 생길 수 있으므로, 이 시스템은 \term{한 시점에 하나의
+와이어 포맷만 존재한다}는 규칙을 지킨다.
+% src: 00.architecture.mvp1.md §3.0 (150-158행)
+
+\begin{callout}[이것은 영구 결정이 아니다]
+이 결정에는 조건이 붙어 있다. "파이프라인이 잘 도는 것이 확인될 때까지"다. 종료
+조건은 실 Kalshi 오더북이 Redis에 차고 \texttt{FINAL} 조회가 중복 0을 반환하는
+단계다. 그 시점에 바이너리 복귀를 \term{재검토}한다. 자동으로 되돌아가는 것이
+아니라, 재검토가 필요한 잠정 결정이라는 뜻이다.
+% src: 00.architecture.mvp1.md §3.0 (143-147행)
+\end{callout}
+
+\paragraph{변경 범위가 왜 두 곳으로 묶이는가.} 이 결정이 건드리는 자리는 코덱 경계
+(\texttt{proto-codec.ts}의 인코더/디코더, 라우팅의 인코딩 분기)와 ClickHouse Kafka
+엔진의 포맷 문자열(MVP2) 두 곳뿐이다. 테이블 DDL, 정렬 키, idempotency key(멱등성
+키) 함수, Redis 키 형태는 손대지 않는다. \term{와이어 포맷은 저장 형태가 아니다}. 이 한 문장이 변경 범위를 좁게 유지하는 근거다.
+% src: 00.architecture.mvp1.md §3.0 (160-166행)
+
+\paragraph{mock 데이터가 이 결정의 가장 강한 증거를 만든다.} 와이어가 JSON이
+되면서, \texttt{/mocks/*.jsonl}의 한 줄은 producer가 Kafka에 실제로 보낼 바이트와
+\term{글자 그대로 동일}해진다. 이전에는 "필드 단위로 비슷하다"는 정도의 유사성이었는데,
+이제는 완전한 동일성이다. mock 줄을 그대로 콘솔 프로듀서에 부어도 성립하고, 실
+토픽에서 퍼낸 줄을 그대로 mock 파일에 붙여도 성립한다. 계약의 참조 구현이 사람이
+읽고 손으로 옮길 수 있는 물건이 된 것이다. 이것이 JSON 전환의 가장 강한 논거다.
+% src: 00.architecture.mvp1.md §3.6 (468-473행)
+
+\section{규칙이 조용히 깨지는 세 지점}
+\label{sec:contract-json-rules}
+
+\paragraph{무슨 문제가 있었나.} JSON은 유연한 포맷이라, 코덱이 기본값 그대로 동작하게
+두면 그 기본값이 조용히 계약을 어긴다. 세 가지 기본값이 특히 위험하다.
+
+\paragraph{규칙 1: 필드명은 proto 이름을 그대로 쓴다.} protobuf-JSON 표준의 기본값은
+lowerCamelCase(예: \texttt{timeMs})다. 그런데 ClickHouse 컬럼은 snake\_case
+(\texttt{time\_ms})다. 쓰기 쪽에서 \texttt{useProtoFieldName: true} 옵션을 빠뜨리면,
+필드명 불일치가 조용한 데이터 손실로 이어진다. 실측 결과, \texttt{timeMs}(camelCase)
+키를 \texttt{time\_ms} 컬럼에 \texttt{JSONEachRow}로 넣으면 서버 기본 설정에서
+\term{INSERT가 exit 0으로 성공하면서 컬럼이 조용히 0이 된다.} 에러도 경고도 없다.
+% src: 00.architecture.mvp1.md §3.7 규칙 1 (531-551행), 위반 시 실측 (591-596행)
+
+\paragraph{규칙 2: int64는 따옴표 친 문자열로 나간다.} JS의 \texttt{number}는
+$2^{53}$을 넘는 정수를 정확히 담지 못하므로, protobuf-JSON 표준은 int64 계열을
+JSON 문자열로 직렬화한다. 이것은 끌 수 있는 옵션이 아니라 표준 자체다. 실측으로
+확인한 바, ClickHouse의 \texttt{JSONEachRow}는 따옴표 친 \texttt{"1758500000123"}을
+추가 설정 없이 \texttt{Int64} 컬럼과 \texttt{DateTime64(3)} 컬럼 양쪽에 정확히
+받아들인다.
+% src: 00.architecture.mvp1.md §3.7 규칙 2 (552-561행), 규칙 3 실측 (576-587행)
+
+\paragraph{규칙 4: 기존 JSON 경로를 그대로 재사용하면 안 된다.} 이 저장소가
+물려받은 \texttt{publishJson()} 함수는 페이로드에 \texttt{\_ts}, \texttt{\_key}를
+\term{주입}한다. 이 두 키는 proto 스키마에 없는 값이다. 여기서 함정이 하나 갈라진다. "규칙 4가 와이어 페이로드를 규율한다"는 것을 "인코더에 \texttt{\_key}를 아예
+넘기지 말라"로 잘못 읽으면, 인코더가 \texttt{idempotency\_key}를 채울 재료를 잃는다.
+그 결과 \term{모든 행의 \texttt{idempotency\_key}가 빈 문자열이 되고}, 이는 정렬
+키의 마지막 성분이므로(\Cref{ch:delivery}) 중복 제거가 아무 에러 없이 통째로
+무력화된다. 올바른 형태는 라우터가 인코더에 \texttt{\{...data, \_key: key\}}를
+\term{입력}으로 넘기고, \texttt{toJson}이 스키마에 선언된 필드만 방출해
+\texttt{\_key}가 와이어에는 실리지 않는 것이다. 규칙이 규율하는 대상(와이어)과
+규율하지 않는 대상(인코더 입력)을 혼동하지 않는 것이 이 규칙의 핵심이다.
+% src: 00.architecture.mvp1.md §3.7 규칙 4 (623-644행)
+
+\section{한 단어가 세 가지 뜻을 지고 있었다: \texttt{venue}, \texttt{ingest\_path}, \texttt{feed}}
+\label{sec:contract-venue}
+
+\paragraph{무슨 문제가 있었나.} Polymarket을 두 번째 예측시장 거래소로 들이기로
+하면서, 예측시장 메시지에 "어느 거래소인가"를 담는 필드가 필요해졌다. 그런데 이
+개념을 표현할 후보 단어 \texttt{source}는 이미 이 저장소 안에서 \term{세 가지
+서로 다른 뜻}으로 쓰이고 있었다.
+
+\begin{itemize}
+  \item 현물(crypto) 메시지의 \texttt{source}는 \texttt{binance}/\texttt{coinbase}
+    값을 가진다. 이것은 이미 "어느 거래소인가"라는 뜻이다.
+  \item Kalshi 계열 메시지의 \texttt{source}는 \texttt{live\_ws}/\texttt{live\_rest}
+    값을 가진다. 이것은 "어느 수집 경로로 받았는가"라는 \term{다른} 뜻이다.
+  \item API 응답의 \texttt{source}는 \texttt{mock}/\texttt{live\_ws} 값을 가진다. 이것은 "mock인가 실데이터인가"라는 또 \term{다른} 뜻이다.
+\end{itemize}
+
+한 단어가 세 자리에서 다른 것을 가리키고 있었으므로, 코드를 읽는 사람은 특정
+\texttt{source} 값을 볼 때마다 "이게 지금 거래소를 말하는지, 경로를 말하는지, mock
+여부를 말하는지"를 문맥으로 추측해야 했다.
+% src: 00.architecture.mvp1.md §3.1 venue 차원 (189-201행), §3.5.3 (459-460행)
+
+\paragraph{그래서 무엇을 바꿨나.} 세 개념에 세 이름을 각각 준다.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabularx}{\linewidth}{@{}lXX@{}}
+    \toprule
+    개념 & 이름 & 값 \\
+    \midrule
+    데이터를 만든 거래소/운영주체 & \texttt{venue} & \texttt{kalshi}, \texttt{polymarket},
+      \texttt{binance}, \texttt{coinbase} \\
+    수집 경로(WS/REST) & \texttt{ingest\_path} & \texttt{live\_ws}, \texttt{live\_rest} \\
+    mock/실데이터 구분(API 응답 전용, DB 컬럼 아님) & \texttt{feed} & \texttt{mock},
+      \texttt{live} \\
+    \bottomrule
+  \end{tabularx}
+  \caption{한 단어가 지던 세 가지 뜻을 세 이름으로 분리한다.}
+  \label{tab:contract-venue-split}
+\end{table}
+% src: 00.architecture.mvp1.md §3.1 (191-195행)
+
+현물 메시지의 \texttt{source}는 이미 venue 개념이었으므로 필드를 추가하지 않고
+\term{이름만} \texttt{venue}로 바꾼다. 필드 번호가 그대로라서 와이어 호환이
+유지된다. Kalshi 계열의 \texttt{source}는 다른 개념이었으므로 \texttt{ingest\_path}로
+개명한다. 예측시장 메시지에는 \texttt{venue} 필드를 \term{신규로} 추가한다.
+% src: 00.architecture.mvp1.md §3.1 (197-204행)
+
+\paragraph{왜 그 변경이 문제를 푸는가.} 이름을 나누면, 코드를 읽는 사람이 값 하나만
+보고도 그것이 무엇을 뜻하는지 알 수 있다. 이것이 "계약이 하나여야 한다"는 이 장의
+주제가 필드 이름 수준까지 내려온 모습이다. 한 이름은 한 개념만 가리켜야 값을 보는
+쪽과 읽는 쪽이 같은 것을 생각한다.
+
+\begin{example}[같은 실패가 뷰 모델에서도 반복됐다]
+\label{ex:contract-orderbooksnapshot}
+대시보드가 오더북을 렌더링할 때 쓰는 뷰 모델(\texttt{OrderbookSnapshot},
+\Cref{sec:contract-view})에서도 같은 종류의 문제가 나타났다. \texttt{kalshi-core}
+패키지 안에 Kalshi WS 파싱용 내부 타입 하나가 \term{같은 이름}
+\texttt{OrderbookSnapshot}으로 존재하고 있었다. 한 이름이 "API가 대시보드에 내는
+뷰 모델"과 "Kalshi WS 메시지를 파싱한 내부 표현"이라는 \term{두 뜻}을 동시에 지고
+있었던 것이다. 해법은 \texttt{venue}/\texttt{ingest\_path}/\texttt{feed}를 가른
+것과 정확히 같다. 거래소 방언 타입은 거래소 이름을 붙여
+\texttt{KalshiWsOrderbook}으로 개명하고, API 계약의 이름 \texttt{OrderbookSnapshot}은
+\Cref{sec:contract-view}가 다루는 뷰 계층에만 남긴다.
+% src: 00.architecture.mvp1.md §3.5.1 (385-390행)
+\end{example}
+
+\section{\texttt{venue}가 정렬 키 선두에 서는 이유}
+\label{sec:contract-sort-key}
+
+\paragraph{무슨 문제가 있었나.} ClickHouse 테이블의 정렬 키(sort key, \texttt{ORDER
+BY})는 단순한 정렬 순서가 아니다. ClickHouse의 스파스 인덱스(sparse index)는
+정렬 키 \term{접두사부터} 효력을 갖고, \Cref{ch:delivery}가 다루는 중복 제거도 이
+정렬 키가 완전히 같은 행만 하나로 접는다. 그래서 정렬 키에 어떤 컬럼을 얼마나
+앞쪽에 두는가는 조회 성능과 중복 제거 양쪽에 함께 영향을 준다.
+
+\paragraph{그래서 무엇을 바꿨나.} 이 시스템의 데이터 테이블은 모두
+\texttt{ORDER BY (venue, ticker, time, idempotency\_key)} 형태를 쓴다.
+\texttt{venue}가 맨 앞이다.
+% src: 00.architecture.mvp1.md §3.4 (277-289행)
+
+\paragraph{왜 그 순서가 문제를 푸는가.} 이 절이 다루는 것은 \texttt{venue}가 선두에
+있어야 하는 이유 중 \term{인덱스와 압축} 두 가지다(우연한 티커 충돌을 막는 이유는
+\Cref{ex:venue-collision}이 이미 다뤘다).
+
+\begin{enumerate}
+  \item \term{인덱스 효율.} \texttt{venue}는 값이 2~4종뿐인 저카디널리티
+    (cardinality, 값의 종류 수) 컬럼이다. 저카디널리티 컬럼이 정렬 키 앞에 있으면,
+    스파스 인덱스가 \texttt{WHERE venue='kalshi'} 같은 조건에서 파트 대부분을
+    인덱스 단계에서부터 걸러낼 수 있다. 정렬 키는 접두사부터 효력을 갖는다는 규칙
+    때문에, 저카디언리티 컬럼이 \texttt{ticker} 뒤에 있으면 이 이득이 사라진다.
+  \item \term{압축률.} 정렬이 \texttt{venue}별로 먼저 묶이면, \texttt{ticker}
+    문자열이 venue별로 연속 배치된다. Kalshi 티커(\texttt{KXBTC\ldots} 형태)와
+    Polymarket 티커(긴 10진수)는 형태가 완전히 다르므로, 같은 venue끼리 묶인 상태가
+    압축기에 더 유리한 패턴을 만든다.
+\end{enumerate}
+% src: 00.architecture.mvp1.md §3.4 (293-298행)
+
+기존 현물(crypto) 테이블이 이미 \texttt{(source, symbol, \ldots)} 형태로 venue
+성격의 컬럼을 선두에 두고 있었다는 사실도 이 순서를 뒷받침한다. 예측시장 쪽만
+다르게 두면 두 가족(\Cref{ex:problem-family-axis})의 정렬 규칙이 갈라진다.
+% src: 00.architecture.mvp1.md §3.4 (295-296행)
+
+\begin{callout}[정렬 키를 바꿔도 병합 동작은 손해를 보지 않는다]
+\texttt{venue}를 선두에 추가해도 ReplacingMergeTree의 중복 제거 능력은 약해지지
+않는다. \texttt{venue}는 메시지마다 결정적으로 정해지는 값이라, 같은 이벤트의
+재전송은 여전히 매번 같은 \texttt{venue} 값을 갖고, 접히는 행의 집합은 줄지 않는다.
+오히려 \texttt{idempotency\_key}(멱등성 키)에도 \texttt{venue}가 들어가면서
+식별자가 더 강해진다(\Cref{ch:delivery}).
+% src: 00.architecture.mvp1.md §3.4 (299-301행, 305-307행)
+\end{callout}
+
+\section{와이어 포맷이 바뀌어도 형태의 원본은 proto다}
+\label{sec:contract-shape-vs-wire}
+
+\paragraph{무슨 문제가 있었나.} \Cref{sec:contract-wire}에서 와이어 포맷을 JSON으로
+바꾸기로 한 결정이, "그럼 이제 스키마의 원본은 JSON 스키마인가"라는 오해를 부를 수
+있다. proto를 버리고 JSON 형태를 새로 어딘가에 손으로 적으면, 다시 계약이 두
+곳으로 갈라지는 실수를 반복하게 된다.
+
+\paragraph{그래서 무엇을 바꿨나.} proto는 그대로 형태의 단일 원본으로 남는다. 바뀐
+것은 그 형태를 바이트로 옮기는 함수 하나뿐이다(\Cref{sec:contract-wire}). 부수
+효과로, JSON에는 \texttt{format\_schema}라는 개념 자체가 없으므로, ClickHouse가
+proto 스키마 파일을 컨테이너 안에 마운트할 필요도 사라졌다. 이 마운트는 과거
+ClickHouse 엔트리포인트가 해당 경로의 소유권을 바꾸려다 실패해 컨테이너 재시작
+루프를 만든 적이 있는 지점이었다. JSON 전환이 일거리를 늘리는 대신 그 문제를
+없애며 해결한 셈이다.
+% src: 00.architecture.mvp1.md §3.0 (부수 효과, 707-715행)
+
+\paragraph{왜 이 구분이 중요한가.} "형태의 원본"과 "와이어로 나가는 표현"을 같은
+것으로 착각하면, 와이어 포맷이 바뀔 때마다 형태 정의도 함께 옮겨야 한다는 잘못된
+결론에 이른다. 이 두 층을 분리해 둔 덕분에, \Cref{sec:contract-wire}의 결정이
+"잠정적"이라고 말할 수 있다. 바이너리로 되돌리는 일이 형태를 다시 정의하는 일이
+아니라, 코덱 안의 함수 호출 하나를 바꾸는 일이기 때문이다.
+
+\section{파생 타입은 파생 원본 옆에 산다}
+\label{sec:contract-view}
+
+\paragraph{무슨 문제가 있었나.} 대시보드가 오더북을 그릴 때 쓰는 응답 형태
+(\texttt{OrderbookSnapshot})는 proto 메시지가 아니라, Kafka에 흐르는 형태에서
+파생된 \term{API 계약}이다. 이 타입이 한때 세 곳에 동시에 있었다. 이 문서의
+산문 설명, \texttt{apps/api} 안의 정의, 그리고 \texttt{apps/web} 안의 정의였다.
+뒤의 둘은 한 글자도 다르지 않은 복제였다. 개발자가 import 대신 복제를 택한 데는
+그 나름의 근거가 있었다. 이 저장소는 앱과 앱 사이에 직접 의존 간선을 두지 않는
+규칙을 지키므로, 두 앱을 억지로 묶어 한쪽을 다른 쪽 배포에 끌고 들어가는 것보다는
+복제가 안전해 보였다.
+% src: 00.architecture.mvp1.md §3.5.1 (344-349행)
+
+\paragraph{그래서 무엇을 바꿨나.} 이 타입을 \texttt{packages/schema} 안,
+\texttt{proto/}·\texttt{proto-codec.ts}와 나란한 \texttt{view/} 디렉터리에 둔다.
+새 패키지 \texttt{packages/types}는 만들지 않는다.
+% src: 00.architecture.mvp1.md §3.5.1 (356-364행, 366-373행)
+
+\paragraph{왜 그 자리가 문제를 푸는가.} \texttt{OrderbookSnapshot}은 이미 "proto가
+아니라 API 계약이며, \texttt{PredOrderbook}에서 파생된다(별도 SSOT 아님)"고 정의돼
+있었다. \term{파생물은 파생 원본 옆에 산다}는 것이 판정의 근거다. 별도 패키지를
+만들면 그 타입이 독립된 계약처럼 보이게 되어, "별도 SSOT가 아니다"라는 원래
+문장과 모순된다. 복제가 위험한 이유도 이것과 같은 축에 있다. \texttt{apps/api}가
+필드를 늘리거나 값의 범위를 넓혀도 \texttt{apps/web}의 복제본은 타입체크를 그대로
+통과하고, \term{값이 화면에서 깨질 때에야} 어긋남이 드러난다. 파생 관계를 코드가
+아니라 기억에 의존해 유지하면, 그 기억은 결국 실패한다.
+% src: 00.architecture.mvp1.md §3.5.1 (351-354행, 358-360행)
+
+\paragraph{이름에 관한 판단 하나 더.} 이 저장소의 패키지는 전부 \term{도메인} 이름을
+쓴다. \texttt{schema}, \texttt{db}, \texttt{common}, \texttt{kalshi-core},
+\texttt{env}. \texttt{types}라는 이름은 언어 기능의 이름일 뿐이라, "이 패키지에
+무엇이 들어와도 되는가"를 스스로 방어할 문장이 없다. 그런 이름의 패키지는 결국
+갈 곳을 정하지 못한 타입들의 집합소가 된다. 반면 \texttt{schema/view/}는 "proto
+메시지에서 파생되지 않는 타입은 여기 들어올 자격이 없다"는 문장을 갖는다. 이
+문장 하나가 \texttt{view/}가 "타입 일반"으로 번지는 것을 막는다.
+% src: 00.architecture.mvp1.md §3.5.1 (361-363행, 375-378행)
+
+\begin{callout}[경계는 한 방향으로만 열린다]
+패키지 내부에서 층은 눈에 보이게 갈라 둔다. \texttt{proto/}(와이어 계약),
+\texttt{proto-codec.ts}(인코딩/디코딩), \texttt{view/}(파생 API 계약). 규칙은
+하나다: \term{\texttt{view/}는 와이어 층을 import할 수 있고, 반대는 금지다.} 파생
+방향을 코드로 강제한 것이다. 가능하면 파생을 기계적으로 표현한다. 예를 들어
+proto 파생 타입에서 \texttt{idempotency\_key}를 빼고 \texttt{feed},
+\texttt{stale\_ms}, \texttt{stale\_threshold\_ms}를 더하는 형태로 적으면, proto에
+필드가 늘 때 뷰가 자동으로 따라온다.
+% src: 00.architecture.mvp1.md §3.5.1 (366-383행)
+\end{callout}
+
+\section{정리: 계약 하나가 지나가는 세 층}
+\label{sec:contract-summary}
+
+이 장에서 본 것을 한 문장으로 모으면 이렇다. \term{proto가 형태를 정하고, codec이
+그 형태를 바이트로 옮기고, ClickHouse DDL이 그 형태를 저장한다. 그리고 이 순서를
+지키는 한, 계약은 몇 개의 필드가 추가되어도 여전히 하나다.} \texttt{venue} 필드
+하나의 여정이 이것을 보여 줬다. 이 계약이 지켜지는 한, 같은 이벤트가 두 번
+들어와도 항상 같은 값을 갖는다는 사실이 성립하고, 그 사실이
+\Cref{ch:delivery}에서 다루는 중복 제거의 전제가 된다.
