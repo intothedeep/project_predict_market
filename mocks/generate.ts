@@ -31,16 +31,17 @@ const POLY_TICKER =
 const BINANCE_SYMBOL = 'MOCK_BTCUSDT';
 const COINBASE_SYMBOL = 'MOCK_BTC-USD';
 
-// Anchored at generation time (00.architecture.mvp1.md §4.5.1/§3.6 ruling,
-// U17): a hardcoded absolute date only gets older every day the mock set
-// sits unregenerated, and a display permanently stuck at "N days stale"
-// cannot demonstrate the EXIT criterion ("kill the writer and it goes
-// stale"). The replayer's pass offset (mock-source.ts) carries this forward
-// to "now" at replay time regardless of when generate.ts last ran, so this
-// no longer needs to be a fixed literal for byte-identity — §3.6's
-// byte-identity claim is about the .jsonl lines being real wire bytes, not
-// about BASE_TS being a fixed constant.
-const BASE_TS = Date.now();
+// Fixed constant anchor (00.architecture.mvp1.md §3.6, U7c — restores the
+// ruling U17② withdrew). The file's absolute time_ms no longer drives
+// stale_ms: mockSource re-anchors every pass to "now" at replay time
+// (§4.5.1, U17①), so freshness works regardless of what BASE_TS is. That
+// freed this constant to serve §3.6's OTHER two requirements instead —
+// reproducibility (regeneration must not change the .jsonl bytes) and key
+// stability (predTickKey/cryptoTickKey embed timeMs, so a moving BASE_TS
+// moves idempotency_key and breaks re-seed dedup). A round, visibly
+// artificial epoch also reads as "obviously mock" in the raw ClickHouse
+// history table, alongside the MOCK_ prefix and feed: "mock" badge.
+const BASE_TS = 1_700_000_000_000; // 2023-11-14T22:13:20.000Z, round epoch
 
 type Row = { topic: string; table: string; data: Record<string, unknown> };
 const rows: Row[] = [];
