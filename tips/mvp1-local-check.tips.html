@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MVP1 로컬 확인</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans+KR:wght@400;500&display=swap">
+<style>
+/* html-theme: the one theme for HTML output (rules/answering.md §3).
+   Light tokens: ported from the owner's earlier web project's globals.css
+   (shadcn neutral, achromatic, radius 0, whole-UI IBM Plex Mono).
+   Dark tokens: added 2026-10-02 in the same achromatic family; the source had no dark theme. */
+
+:root {
+    --radius: 0;
+
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.55 0 0);
+    --rule: oklch(0.9 0 0);          /* hairlines and chart grid; the source --border is too strong for grids */
+    --ring: oklch(0.45 0 0);
+
+    /* signal colours carry meaning, not decoration */
+    --signal-instruction: #d40000;   /* an instruction / something the reader must act on */
+    --signal-plan: #0432ff;          /* a plan / a pre-registered line */
+    --signal-flag-fill: #fff3a0;     /* a highlighted cell or row */
+    --signal-flag-line: #e6d24a;
+    --signal-dead-fill: #e4e4e2;     /* retired, skipped, out of scope */
+    --signal-dead-ink: oklch(0.53 0.01 260);
+
+    /* Plex Mono has no Hangul; Korean falls through to Plex Sans KR */
+    --font: "IBM Plex Mono", "IBM Plex Sans KR", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --background: oklch(0.145 0 0);
+        --foreground: oklch(0.985 0 0);
+        --card: oklch(0.185 0 0);
+        --card-foreground: oklch(0.985 0 0);
+        --primary: oklch(0.922 0 0);
+        --primary-foreground: oklch(0.205 0 0);
+        --secondary: oklch(0.269 0 0);
+        --muted: oklch(0.269 0 0);
+        --muted-foreground: oklch(0.708 0 0);
+        --destructive: oklch(0.704 0.191 22.216);
+        --border: oklch(0.5 0 0);
+        --rule: oklch(0.3 0 0);
+        --ring: oklch(0.6 0 0);
+        --signal-instruction: #ff5a52;
+        --signal-plan: #6f8cff;
+        --signal-flag-fill: #4a4312;
+        --signal-flag-line: #c9b53a;
+        --signal-dead-fill: #2b2b2a;
+        --signal-dead-ink: oklch(0.68 0.01 260);
+    }
+}
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.185 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(0.5 0 0);
+    --rule: oklch(0.3 0 0);
+    --ring: oklch(0.6 0 0);
+    --signal-instruction: #ff5a52;
+    --signal-plan: #6f8cff;
+    --signal-flag-fill: #4a4312;
+    --signal-flag-line: #c9b53a;
+    --signal-dead-fill: #2b2b2a;
+    --signal-dead-ink: oklch(0.68 0.01 260);
+}
+
+* { box-sizing: border-box; border-radius: var(--radius); }
+body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font);
+    font-feature-settings: "cv11", "ss01";
+    font-size: 14px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 32px 64px;
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+h1 { font-size: 24px; line-height: 1.3; font-weight: 700; margin: 0; text-wrap: balance; }
+h2 { font-size: 17px; font-weight: 500; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 72ch; }
+.muted { color: var(--muted-foreground); }
+.label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); }
+.panel { background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); padding: 16px; }
+.scroll-x { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+th { font-weight: 500; color: var(--muted-foreground); }
+th:first-child, td:first-child { text-align: left; }
+.flag { background: var(--signal-flag-fill); box-shadow: inset 2px 0 0 var(--signal-flag-line); }
+.instruction { color: var(--signal-instruction); }
+.plan { color: var(--signal-plan); }
+.dead { background: var(--signal-dead-fill); color: var(--signal-dead-ink); }
+button { font: inherit; padding: 4px 12px; border: 1px solid var(--border); background: var(--card); color: var(--foreground); cursor: pointer; }
+button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+svg text { fill: var(--muted-foreground); font-family: var(--font); font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.step { display: flex; flex-direction: column; gap: 14px; }
+.step.hero { border-width: 2px; }
+.eyebrow { font-size: 11px; letter-spacing: .08em; color: var(--muted-foreground); }
+.stepno { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0; margin: 0; list-style: none; }
+.toc a { color: var(--foreground); }
+td.w, th.w { white-space: normal; text-align: left; }
+.codewrap { position: relative; }
+pre { margin: 0; padding: 12px 14px; background: var(--muted); border: 1px solid var(--rule); overflow-x: auto; font: inherit; font-size: 13px; line-height: 1.5; }
+code { font: inherit; background: var(--muted); padding: 0 4px; }
+pre code { background: none; padding: 0; }
+.copy { position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 2px 8px; }
+ul { margin: 0; padding-left: 20px; }
+li + li { margin-top: 4px; }
+.caution { border-left: 4px solid var(--signal-instruction); }
+.caption { font-size: 12px; color: var(--muted-foreground); max-width: 80ch; }
+svg { max-width: 100%; height: auto; }
+svg .box { fill: var(--card); stroke: var(--border); stroke-width: 1.2; }
+svg .boxhi { fill: var(--signal-flag-fill); stroke: var(--signal-flag-line); stroke-width: 1.5; }
+svg .arrow { stroke: var(--border); stroke-width: 1.4; fill: none; }
+svg .t { fill: var(--foreground); font-size: 12px; }
+svg .tb { fill: var(--foreground); font-size: 12px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header style="display:flex;flex-direction:column;gap:12px">
+  <div class="eyebrow">TIPS · 로컬 개발 · MVP1 mock</div>
+  <h1>MVP1 로컬 확인</h1>
+  <p>mock 데이터로 MVP1 전체(writer, Redis, api, 웹 대시보드)를 내 Mac에서 띄우고 확인하는 법이다. 7단계. 0단계는 한 번만 하고, 매번은 1단계부터 한다. Kafka는 쓰지 않는다.</p>
+  <ol class="toc">
+    <li><a href="#flow">흐름</a></li>
+    <li><a href="#s0">0. 한 번만 설정</a></li>
+    <li><a href="#s1">1. 저장소 띄우기</a></li>
+    <li><a href="#s2">2. writer와 api</a></li>
+    <li><a href="#s3">3. 대시보드</a></li>
+    <li><a href="#s4">4. 명령으로 확인</a></li>
+    <li><a href="#s5">5. 일부러 끊어 보기</a></li>
+    <li><a href="#s6">6. 끄기</a></li>
+    <li><a href="#trouble">막히면</a></li>
+  </ol>
+</header>
+
+<section id="flow" class="panel step">
+  <h2>흐름</h2>
+  <p>알려는 것: 화면은 Redis만 읽는다. ClickHouse seed는 이력 테이블용이고 대시보드에는 나오지 않는다.</p>
+  <div class="scroll-x">
+  <svg viewBox="0 0 900 150" role="img" aria-label="mocks jsonl에서 orderbook-writer, Redis, api 3001, web 5173 순서의 흐름도. seed는 ClickHouse로 따로 간다" width="900">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--border)"/></marker></defs>
+    <rect class="box" x="10" y="20" width="150" height="50"/><text class="tb" x="22" y="40">mocks/*.jsonl</text><text class="t" x="22" y="58">MOCK_ 티커만</text>
+    <path class="arrow" d="M160 45 H200" marker-end="url(#ah)"/>
+    <rect class="boxhi" x="204" y="20" width="170" height="50"/><text class="tb" x="216" y="40">orderbook-writer</text><text class="t" x="216" y="58">MOCK_SOURCE=1, 200ms</text>
+    <path class="arrow" d="M374 45 H414" marker-end="url(#ah)"/>
+    <rect class="box" x="418" y="20" width="130" height="50"/><text class="tb" x="430" y="40">Redis</text><text class="t" x="430" y="58">ob:&lt;venue&gt;:&lt;ticker&gt;</text>
+    <path class="arrow" d="M548 45 H588" marker-end="url(#ah)"/>
+    <rect class="box" x="592" y="20" width="130" height="50"/><text class="tb" x="604" y="40">apps/api</text><text class="t" x="604" y="58">:3001, SSE</text>
+    <path class="arrow" d="M722 45 H762" marker-end="url(#ah)"/>
+    <rect class="box" x="766" y="20" width="124" height="50"/><text class="tb" x="778" y="40">apps/web</text><text class="t" x="778" y="58">:5173</text>
+    <rect class="box" x="10" y="95" width="150" height="40"/><text class="tb" x="22" y="120">seed-clickhouse.sql</text>
+    <path class="arrow" d="M160 115 H200" marker-end="url(#ah)"/>
+    <rect class="box" x="204" y="95" width="170" height="40"/><text class="tb" x="216" y="120">ClickHouse (이력)</text>
+    <text class="t" x="390" y="120">화면에는 연결되지 않는다 (§5.6)</text>
+  </svg>
+  </div>
+</section>
+
+<section id="s0" class="panel step">
+  <div class="stepno">Step 0 · 한 번만</div>
+  <h2>0. 한 번만 설정</h2>
+  <p>알려는 것: Docker 런타임과 <code>.env</code>, 의존성. 이미 했으면 건너뛴다.</p>
+  <div class="label">저장소 루트에서</div>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>colima start --cpu 4 --memory 6
+docker context ls            # colima 줄에 * 가 있어야 한다
+cp infra/env.example .env    # CLICKHOUSE_PASSWORD 를 채운다 (필수)
+pnpm install</code></pre></div>
+  <ul>
+    <li><code>.env</code>는 커밋하지 않는다.</li>
+    <li><code>KAFKA_BOOTSTRAP</code>은 넣지 않는다. MVP1은 Kafka 없이 돈다.</li>
+    <li><code>jq</code>가 있어야 한다 (<code>make migrate</code>, <code>make health</code>).</li>
+  </ul>
+</section>
+
+<section id="s1" class="panel step hero">
+  <div class="stepno">Step 1 of 6</div>
+  <h2>1. 저장소 띄우기 (ClickHouse, Redis)</h2>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>make up
+docker compose -f infra/docker-compose.dev.yml --env-file .env ps   # 둘 다 healthy
+make migrate</code></pre></div>
+  <p>선택: ClickHouse에 mock 이력을 넣는다. 대시보드만 볼 거면 건너뛰어도 된다.</p>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>docker exec -i clickhouse-dev sh -c \
+  'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" -d "$CLICKHOUSE_DB" --multiquery' \
+  &lt; mocks/seed-clickhouse.sql
+
+docker exec clickhouse-dev sh -c \
+  'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" -d "$CLICKHOUSE_DB" \
+   -q "SELECT venue, count() FROM pred_orderbook_ws FINAL GROUP BY venue"'</code></pre></div>
+  <ul>
+    <li>seed를 두 번 넣어도 <code>FINAL</code> 조회에서는 같은 키가 하나로 접힌다.</li>
+  </ul>
+</section>
+
+<section id="s2" class="panel step hero">
+  <div class="stepno">Step 2 of 6</div>
+  <h2>2. writer와 api 띄우기</h2>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>make start</code></pre></div>
+  <ul>
+    <li>writer는 <code>MOCK_SOURCE=1</code>로 뜨고, api는 <code>:3001</code>에 뜬다.</li>
+    <li>로그는 <code>logs/writer.jsonl</code>, <code>logs/api.jsonl</code>에 쌓인다. pid는 <code>logs/*.pid</code>에 있다.</li>
+    <li>이미 떠 있으면 다시 띄우지 않고 "already running"을 찍는다.</li>
+  </ul>
+</section>
+
+<section id="s3" class="panel step hero">
+  <div class="stepno">Step 3 of 6</div>
+  <h2>3. 대시보드 열기</h2>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>pnpm --filter @repo/web dev
+# 열기: http://localhost:5173</code></pre></div>
+  <p>Makefile에는 이 단계가 없다. 새 터미널에서 실행하고 <code>Ctrl+C</code>로 끈다. Vite가 <code>/api</code>를 <code>localhost:3001</code>로 넘긴다.</p>
+  <table>
+    <thead><tr><th class="w">화면에서 볼 것</th><th class="w">정상</th></tr></thead>
+    <tbody>
+      <tr><td class="w">venue 선택</td><td class="w">kalshi, polymarket 둘 다 고를 수 있다</td></tr>
+      <tr><td class="w">오더북</td><td class="w">두 venue 모두 값이 계속 바뀐다 (티커당 약 400ms)</td></tr>
+      <tr><td class="w">feed 배지</td><td class="w"><code>mock</code></td></tr>
+      <tr><td class="w">freshness 배지</td><td class="w">fresh. <code>stale_ms</code>가 5,000ms를 넘으면 stale</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="s4" class="panel step">
+  <div class="stepno">Step 4 of 6</div>
+  <h2>4. 명령으로 확인</h2>
+  <div class="label">api 응답 (두 venue)</div>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>curl -s localhost:3001/api/orderbook/kalshi/MOCK_KXBTCD-26SEP22-B112000 | jq '{feed, stale_ms}'
+curl -s localhost:3001/api/orderbook/polymarket/MOCK_POLY_71321045679252212594626385532706912750332728571942532289631379312455583992563 | jq '{feed, stale_ms}'
+curl -sN localhost:3001/api/stream     # SSE. 이벤트가 계속 오면 정상, Ctrl+C</code></pre></div>
+  <p>정상: <code>feed</code>가 <code>"mock"</code>, <code>stale_ms</code>가 5000보다 작은 숫자다. 없는 티커는 404다.</p>
+  <div class="label">Redis</div>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>docker exec redis-dev redis-cli KEYS 'ob:*'
+docker exec redis-dev redis-cli SCARD ob:index        # 2 이상
+docker exec redis-dev redis-cli TTL writer:heartbeat  # 60 이하</code></pre></div>
+  <div class="label">health check와 로그</div>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>make health                       # 4개 단언, 모두 통과하면 exit 0
+jq -e 'type=="object"' logs/writer.jsonl logs/api.jsonl &gt; /dev/null && echo "모든 줄 JSON"
+make tail-logs                    # 실시간으로 보기, Ctrl+C</code></pre></div>
+  <p class="caption">health check 4개: writer와 api가 살아 있다 · Kafka 소켓 0개 · 로그 전 줄 JSON · writer 마지막 로그가 15초 안.</p>
+</section>
+
+<section id="s5" class="panel step">
+  <div class="stepno">Step 5 of 6</div>
+  <h2>5. 일부러 끊어 보기 (freshness)</h2>
+  <p>알려는 것: writer가 죽으면 화면이 stale로 바뀌는지. MVP1 EXIT 기준이다.</p>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code>make stop-writer
+# 약 5초 뒤 화면의 freshness 배지가 stale 로 바뀐다
+curl -s localhost:3001/api/orderbook/kalshi/MOCK_KXBTCD-26SEP22-B112000 | jq .stale_ms   # 계속 커진다
+make health        # 단언 1(writer 생존)이 실패해야 정상
+
+make start-writer  # 되돌리기: 배지가 fresh 로 돌아온다</code></pre></div>
+</section>
+
+<section id="s6" class="panel step">
+  <div class="stepno">Step 6 of 6</div>
+  <h2>6. 끄기</h2>
+  <div class="codewrap"><button class="copy" type="button">복사</button><pre><code># 웹: 그 터미널에서 Ctrl+C
+make stop     # writer, api
+make down     # ClickHouse, Redis 컨테이너 (데이터 볼륨은 남는다)</code></pre></div>
+  <ul>
+    <li class="instruction"><code>make down</code>에 <code>-v</code>를 붙이지 않는다. 볼륨을 지우면 ClickHouse 데이터가 사라진다. 볼륨 초기화는 소유자가 정한다.</li>
+    <li>pid 파일은 지우지 않아도 된다. 다음 <code>make start</code>가 덮어쓴다.</li>
+  </ul>
+</section>
+
+<section id="trouble" class="panel step">
+  <h2>막히면</h2>
+  <div class="scroll-x">
+  <table>
+    <thead><tr><th class="w">증상</th><th class="w">원인과 할 일</th></tr></thead>
+    <tbody>
+      <tr><td class="w"><code>make up</code>: <code>set CLICKHOUSE_PASSWORD in root .env</code></td><td class="w">루트 <code>.env</code>가 없거나 비밀번호가 비었다. 0단계</td></tr>
+      <tr><td class="w">컨테이너는 떴는데 <code>docker ps</code>에 안 보인다</td><td class="w">Docker 컨텍스트가 섞였다. <code>docker context use colima</code></td></tr>
+      <tr><td class="w">writer가 바로 죽는다</td><td class="w"><code>MOCK_SOURCE</code> 없이 직접 띄웠다. <code>make start-writer</code>로 띄운다</td></tr>
+      <tr><td class="w">화면이 비었거나 api가 404</td><td class="w">writer가 Redis를 아직 안 채웠다. 4단계의 <code>KEYS 'ob:*'</code> 확인</td></tr>
+      <tr><td class="w">화면에서 <code>/api</code> 요청 실패</td><td class="w">api가 <code>:3001</code>에 없다. <code>lsof -iTCP:3001 -sTCP:LISTEN</code>, <code>logs/api.jsonl</code></td></tr>
+      <tr><td class="w"><code>make health</code> 단언 3 실패</td><td class="w">로그에 JSON이 아닌 줄이 있다. <code>jq</code> 오류가 가리키는 줄을 본다</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">원본: <code>Makefile</code>, <code>infra/docker-compose.dev.yml</code>, <code>_scripts/health-check.sh</code>, <code>00.architecture.mvp1.md</code> §10, PLAN.md Phase 표 (2026-10-18 기준)</p>
+</section>
+
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.parentElement.querySelector('code').innerText;
+    navigator.clipboard.writeText(t).then(function () { b.textContent = '복사됨'; setTimeout(function () { b.textContent = '복사'; }, 1200); });
+  });
+});
+</script>
+</body>
+</html>
