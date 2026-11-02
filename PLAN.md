@@ -28,7 +28,7 @@ Kalshi/Polymarket(예측시장)과 Binance/Coinbase(현물)의 BTC 데이터를 
 - 대시보드 푸시는 **SSE** (브라우저 WebSocket 아님).
 - Q4-b(seq 버그)는 **진단만** — 수정은 별건(U13).
 - **Q2 종결**: 오더북 재구성은 **예측시장(Kalshi + Polymarket) 전용**. Binance/Coinbase는 틱·체결만, 호가창 없음.
-- 잔여 미결: Q4(U13 블로커 — 합성 카운터도 producer 재시작 시 리셋되므로 세션 성분은 **MVP3 필수 선행**으로 격상, 새 질문을 열지 않고 Q4에 병합), Q5(U14에 부속), Q6(U10에 부속, Vite가 기본값).
+- 잔여 미결: Q4(U13 블로커 — 합성 카운터도 producer 재시작 시 리셋되므로 세션 성분은 **MVP3 필수 선행**으로 격상, 새 질문을 열지 않고 Q4에 병합), Q5(U14에 부속). Q6는 종결: Vite 유지 (D-001, 2026-11-01).
 
 ## Phase structure (§6)
 

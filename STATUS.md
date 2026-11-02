@@ -58,3 +58,7 @@
 2026-09-25 mvp1: U23 완료·커밋 (9d2e9c1) — 5개 패키지 중 4개는 실제로 x_* 를 제외하고 있었으나 packages/schema의 x_utils.ts는 **제외되지 않아** dist/x_utils.d.ts까지 나오고 있었다(아키텍트가 예측한 실패 그대로). 제외를 실제로 만들었고 파일 자체는 손대지 않음 (PLAN.md U23)
 2026-09-25 mvp1: U7c 완료·커밋 (6e62abe) — BASE_TS를 고정 상수로 환원. 두 번 재생성해도 git diff 비어 있고, 재seed 시 정상적으로 접힘(키에 timeMs가 박히는 tick 테이블에서 count 4 / FINAL 2). U7b 기준은 약화가 아니라 복원. 볼륨 재생성으로 reviewer의 MOCK_REVIEW_* 4행도 함께 정리됨 (PLAN.md U7b/U7c)
 2026-09-25 mvp1: U24 완료·커밋 (0d7050d) — jq --arg 로 JSON 라인 출력, 따옴표 포함 파일명도 왕복 보존. 고의 파손은 999_break_"quoted".sql 로 수행하고 종료코드 62 유지 확인 (PLAN.md U24)
+2026-11-01 web: D-001 (DECISIONS.md)
+2026-11-01 docs: tips/ 신설, 루트 README 신설 후 영어로 전환, tips/README 영어로 전환 (bc9b865, 51e546e, README.md)
+2026-11-01 book: 여백을 geometry로 축소 (dc04651)
+2026-11-01 docs: 공개 문서에서 Kafka 브로커 주소 제거 (c4b631e)
