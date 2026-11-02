@@ -1,6 +1,6 @@
 # infra/ — local dev stack (colima)
 
-ClickHouse + Redis only. Kafka is remote (Oracle `144.24.94.18:9092`) — never
+ClickHouse + Redis only. Kafka is remote (Oracle, address in `KAFKA_BOOTSTRAP`) — never
 run it locally; see `00.architecture.mvp1.md` §10.
 
 ## Runbook
