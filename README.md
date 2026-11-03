@@ -153,3 +153,182 @@ PLAN.md  STATUS.md  DECISIONS.md  00.architecture.mvp1.md
 | [DECISIONS.md](./DECISIONS.md) | Decision log |
 | [00.architecture.mvp1.md](./00.architecture.mvp1.md) | Original design |
 | [tips/](./tips/README.md) | Local check guide |
+
+## 9. Previous projects
+
+Two earlier projects collected weather, market, and crypto data. This repo rebuilds them in smaller steps.
+
+**Saved files and documents hold only a small part of what was collected. The May to July 2026 volume is not recorded in either repo.**
+
+| Item | project_betting_kalshi | project-weather-bot |
+| --- | --- | --- |
+| Focus | Weather and crypto collectors. Temperature models from weather features and Kalshi labels | Paper trading from weather forecasts and Polymarket prices |
+| Market | Kalshi. Polymarket was planned only | Polymarket |
+| Cities | 60 in the config | 51 locations in the code. 20 cities in the saved files |
+| Commits | 186 | 58 |
+| Commit period | 2026-04-02 to 2026-09-22 | 2026-04-26 to 2026-09-21 |
+| Recorded data | No data files. Documents record 582 settled markets, 22,268 hourly candles, 4,098 National Oceanic and Atmospheric Administration (NOAA) rows | 140 JSON files, 2.9 MB, from 2026-04-23 to 2026-04-27 |
+
+| Item | The owner reports | Repo evidence |
+| --- | --- | --- |
+| Period | Both projects collected weather data from May to July 2026 | No file in either repo records a collection start, stop, uptime, or total row count for May to July. The `project-weather-bot` local run logs end on 2026-05-18. A later document shows live changes on 2026-05-23. Its fixes went to a separate host, so the local logs do not prove a stop |
+| Cities | Together they covered 50 to 60 cities. Their city lists partly overlap | `project_betting_kalshi` config: 60 cities (20 flagged for Kalshi, 51 flagged for Polymarket), 62 airport stations. `project-weather-bot` code: 51 locations. All 51 appear in its logs from 2026-05-15 to 2026-05-18 |
+| Volume | The May to July volume is larger than the counts in the repos | The repos do not record that volume. A retention rule (time to live) of 7 or 30 days was written for some raw `project_betting_kalshi` tables. Its status was "apply pending". Whether it was applied is not recorded. If applied, those raw rows are gone |
+| Exact counts | They may sit in the owner's private ClickHouse databases | No one queried them for this section |
+
+### 9.1 project_betting_kalshi
+
+The owner rebuilt the project because the first try built a large system at once. This repo therefore builds one MVP phase at a time.
+
+#### Project size
+
+Counted from the old repo tree on 2026-11-02.
+
+| Item | Count |
+| --- | --- |
+| Commits | 186 (2026-04-02 to 2026-09-22) |
+| Tracked files | 893 |
+| Apps | 9 |
+| Packages | 9 |
+| ClickHouse migration files | 44 |
+| Kafka topics | 39 in code, 40 in the topic script |
+
+#### Measured data snapshot
+
+| Data | Count | Period | Note |
+| --- | --- | --- | --- |
+| Kalshi KXHIGHNY settled markets | 582 | 2025-12-26 to 2026-04-01 | 6 markets a day |
+| Kalshi KXHIGHNY hourly candles | 22,268 | 2025-12-24 to 2026-04-01 | 38.3 candles per market. Covers all 582 markets |
+| NOAA Climate Data Online (CDO) New York daily maximum temperature | 4,098 rows | 2015 to 2026-04-02 | |
+
+#### Collectors
+
+Intervals are the configured values at the last commit. Earlier values changed, and no per-date history exists.
+
+"Ran" means the owner's checkbox or the deploy history says it ran. Other rows record no run.
+
+Weather (`prod-weather-ts`)
+
+| Source | Data | Interval | Locations | Status |
+| --- | --- | --- | --- | --- |
+| National Weather Service (NWS) observation | temperature, humidity, wind, pressure, precipitation, conditions | 5 minutes | 20 stations | Ran |
+| NWS alert | type, severity, area, headline, event | 5 minutes | 16 states | Ran |
+| NWS hourly forecast | temperature, humidity, wind, precipitation probability, conditions, 168 periods | 1 hour | 20 US | Ran |
+| Meteorological Aerodrome Report (METAR) | temperature, station id | 15 minutes (code default) | 62 stations, 60 cities | Ran |
+| Open-Meteo current | temperature, humidity, precipitation, wind, pressure, cloud, weather code | 15 minutes | 60 | Ran |
+| Open-Meteo 15-minute forecast | temperature, precipitation, 4 slots per poll | 15 minutes | 60 | Ran |
+| Open-Meteo European Centre for Medium-Range Weather Forecasts (ECMWF) daily | daily maximum and minimum, 7 days | 6 hours | 60 | Ran |
+| Open-Meteo Global Forecast System (GFS) daily | daily maximum and minimum, 3 days | 6 hours | 20 US | Ran |
+| Open-Meteo High-Resolution Rapid Refresh (HRRR) | temperature, humidity, wind, 18 hours | 1 hour | 20 US | Code exists. HTTP 400 until a 2026-05-18 fix. Later success not recorded |
+| OpenWeatherMap | temperature, humidity, pressure, wind, cloud, rain, conditions | 2 hours | 60 | Ran |
+| Visual Crossing | temperature, humidity, pressure, wind, cloud, rain, conditions | 2 hours | 60 | Ran |
+| Tomorrow.io | temperature, humidity, wind, pressure, cloud, precipitation intensity, weather code | 4 hours | 2 (New York, Chicago) | Code exists. No run recorded |
+| NOAA CDO | daily maximum and minimum temperature. The schema also holds average temperature, precipitation, snow, and wind | One-time backfill | New York in the measured snapshot | Stored: 4,098 rows |
+
+Kalshi
+
+| Source | Data | Interval | Scope | Status |
+| --- | --- | --- | --- | --- |
+| Representational State Transfer (REST) markets | ticker, title, status, bid and ask, last price, volume, open interest, strikes, times, result | 15 minutes | 47 entries (46 unique): 7 crypto + 40 climate | Ran |
+| REST series | title, category, frequency, fees, settlement source | 12 hours | Not traced | Ran |
+| REST market history | ticker, title, status, bid and ask, last price, volume, open interest, strikes, times, result | Daily, 25-hour lookback | Not traced | Ran |
+| REST candles | open, high, low, close, mean, bid and ask, volume, open interest | Daily job, 1-minute candles | Not traced | Code exists. Deployment open |
+| REST orderbook and trades | price levels, trade price, count, side | Disabled in code (commented out) | None | Code exists |
+| WebSocket ticker | bid, ask, last, volume, open interest, sizes | Stream | 147 series entries | Code exists. Run not verified |
+| WebSocket trade | trade id, price, count, taker side | Stream | 147 series entries | Code exists. Run not verified |
+| WebSocket orderbook delta | bids, asks, seq, type | Stream | 147 series entries | Code exists. Run not verified |
+
+Spot crypto
+
+| Source | Data | Interval | Scope | Status |
+| --- | --- | --- | --- | --- |
+| Binance | trades (price, quantity, id, buyer-maker), ticks (last, 24-hour high, low, volume) | Stream | 4: BTC, ETH, SOL, XRP | Code exists. Pipeline "silently broken end-to-end" until a 2026-07-02 fix. Fix not verified |
+| Coinbase | trades (price, quantity, side, id), ticks (last, best bid, best ask, 24-hour volume, high, low) | Stream | 4 | Code exists. Pipeline "silently broken end-to-end" until a 2026-07-02 fix. Fix not verified |
+
+Polymarket in this repo: planned only.
+
+#### Used
+
+NOAA features plus Kalshi settled-market labels trained temperature models.
+
+The table shows the Brier score. Lower is better.
+
+| Model | Run 2026-04-02 (435 settled markets) | Run 2026-04-07 (475 settled markets, 3,265 train rows, 817 test rows) |
+| --- | --- | --- |
+| Baseline | 0.2506 | 0.2405 |
+| Random forest | 0.2101 | 0.2033 |
+| LightGBM | 0.2099 | 0.203 |
+| XGBoost | 0.2099 | 0.2029 |
+
+#### Numbers not to rely on
+
+- Later 38-feature runs showed Brier 0.043. The owner flagged them as probable data leakage, so they are not reportable.
+- A backtest simulation showed Kelly +997% return on investment. It used 500 synthetic episodes, not collected data.
+- Live betting stayed disabled. No real-data backtest or paper-trading result was recorded.
+
+### 9.2 project-weather-bot
+
+#### Origin and size
+
+It derives from an MIT-licensed bot. The license text reads `Copyright (c) 2026 alteregoeth-ai`.
+
+All trading was paper trading. The live broker is a stub. No real-money trade is recorded.
+
+| Item | Count |
+| --- | --- |
+| Commits | 58 (2026-04-26 to 2026-09-21) |
+| Tracked files | 372 |
+| Python files | 113 |
+| Test files | 12 |
+| Paper-trading configs | 5 |
+| ClickHouse tables | 13 |
+| ClickHouse views | 2 |
+
+#### Saved in files (2026-04-23 to 2026-04-27)
+
+These counts cover only the saved files. The owner reports a larger volume from May to July 2026. The repos do not record that volume.
+
+| Data | Count | Note |
+| --- | --- | --- |
+| Files | 140 JSON files, 2.9 MB | 20 cities |
+| Forecast snapshots | 6,461 | D+0 2,303, D+1 2,303, D+2 1,855 |
+| Market snapshots | 6,461 | median gap 61 minutes |
+| ECMWF values | 6,172 | |
+| GFS-seamless values, stored under the key `hrrr` | 1,931 | 6 Fahrenheit-market cities |
+| METAR values | 2,282 | D+0 only |
+| Bucket outcome rows | 1,540 | latest list per market |
+
+#### Collectors
+
+| Source | Data | Interval | Destination | Status |
+| --- | --- | --- | --- | --- |
+| Open-Meteo ECMWF | daily maximum and minimum | Scan about hourly. Cached 30 minutes for D+0, 60 minutes later | `forecast_snapshots` | Stored in April files. 7,791 forecast rows on 2026-05-07 |
+| Open-Meteo GFS-seamless | daily maximum and minimum | Scan about hourly. Cached 30 minutes for D+0, 60 minutes later | `forecast_snapshots` | Stored in April files. 7,791 forecast rows on 2026-05-07. 11 US cities from May |
+| METAR | current observed temperature, not a daily maximum | Scan about hourly. Cached 25 minutes | `forecast_snapshots` | Stored in April files. 7,791 forecast rows on 2026-05-07 |
+| Polymarket Gamma, latest state | question, top bucket, price, volume, end date | Replaced on update | `markets` | 100 rows on 2026-05-07 |
+| Polymarket Gamma, all buckets | bucket range, price, volume | 1 hour. 5 minutes for events with open positions. Rows kept 90 days | `bucket_price_history` | Ran, rows not recorded |
+| Visual Crossing | actual daily maximum for the station | At market resolution, plus a backfill job | `markets` | 1 row on 2026-05-07 |
+| Decisions | action and skip reason | Each scan | `events_decisions` | Ran, rows not recorded |
+| Polymarket central limit order book (CLOB) | none | None | None | Not collected. Gamma `bid` and `ask` in scans are the YES and NO prices, not an order book. They sum to 1 in all 1,540 saved rows |
+
+#### Used
+
+Forecasts plus Gamma prices fed these steps. The values come from the code.
+
+- Forecast choice: US cities use the `hrrr` value if present, otherwise ECMWF.
+- Entry gates: volume at least 500, expected value at least the config minimum, Kelly size at least $0.50, spread at most 0.03, ask at most 0.45.
+- Probability: a normal cumulative distribution function with per-city sigma, or point-mass p=1.0.
+- Exits: 20% position stop, 5% budget stop, take-profit 0.85 and 0.75.
+
+#### Measured paper result (2026-04-23 to 2026-04-27, one run)
+
+- 99 positions: 93 closed, 6 open. 21 wins, 69 losses, 3 flat.
+- Closed profit and loss: -$249.70 on $1,860 cost, return on investment -13.4%.
+- Exits: stop loss 44 (-$218.38), forecast changed 44 (-$113.55), trailing stop 3 ($0), resolved 2 (+$82.23).
+- Limits: upstream point-mass logic, every position $20, only 2 trades settled. Too small to judge the strategy.
+
+#### Numbers not to rely on
+
+- The saved balance in `data/state.json` disagrees with the saved positions. Do not report either balance.
+- Three trade-count bugs were fixed on 2026-05-02. Older counts keep the gaps.
+- Results after 2026-05-05 exist only in ClickHouse.
